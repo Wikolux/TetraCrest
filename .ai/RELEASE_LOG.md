@@ -223,3 +223,91 @@ TetraCrest
 ### Tests
 
 56 tests passing
+
+# Release
+
+## Version 0.2.0
+
+Date:
+2026-07-25
+
+---
+
+### Completed
+
+### M9 — Pagination Everywhere
+
+Implemented standardized pagination across all list endpoints.
+
+Added:
+
+- skip
+- limit
+- validation
+- repository pagination
+
+---
+
+### M10 — Full CRUD
+
+Added:
+
+- PATCH endpoints
+
+- DELETE endpoints
+
+for:
+
+- Organizations
+- Projects
+- Tasks
+- Knowledge
+- Memory
+
+---
+
+### M11 — Tenant Isolation
+
+Implemented:
+
+- authenticated mutation routes
+
+- tenant-aware repositories
+
+- organization isolation
+
+- reusable authorization dependencies
+
+- cross-tenant protection
+
+---
+
+### Testing
+
+56+ passing tests
+
+No startup errors
+
+No mapper errors
+
+No repository failures
+
+---
+
+### Architecture Improvements
+
+- shared repository update methods
+
+- reusable tenant authorization dependency
+
+- standardized pagination
+
+- improved CRUD consistency
+
+---
+
+### Status
+
+Phase 1 Complete
+
+Beginning Phase 2 — Knowledge Engine
