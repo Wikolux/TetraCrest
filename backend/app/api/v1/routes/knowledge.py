@@ -7,6 +7,7 @@ from app.schemas.knowledge_document import (
     KnowledgeDocumentRead,
     KnowledgeDocumentUpdate,
     KnowledgeURLIngestRequest,
+    KnowledgeYouTubeIngestRequest,
 )
 from app.services.knowledge_service import KnowledgeService
 from database import get_db
@@ -39,6 +40,14 @@ def ingest_document(
 def ingest_url_document(payload: KnowledgeURLIngestRequest, db: Session = Depends(get_db)):
     service = KnowledgeService(db)
     return service.ingest_url(
+        payload.url, payload.organization_id, created_by=payload.created_by, title=payload.title
+    )
+
+
+@router.post("/ingest/youtube", response_model=KnowledgeDocumentRead, status_code=status.HTTP_201_CREATED)
+def ingest_youtube_document(payload: KnowledgeYouTubeIngestRequest, db: Session = Depends(get_db)):
+    service = KnowledgeService(db)
+    return service.ingest_youtube(
         payload.url, payload.organization_id, created_by=payload.created_by, title=payload.title
     )
 

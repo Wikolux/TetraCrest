@@ -27,6 +27,13 @@ class KnowledgeURLIngestRequest(BaseModel):
     title: str | None = None
 
 
+class KnowledgeYouTubeIngestRequest(BaseModel):
+    url: str
+    organization_id: int
+    created_by: int | None = None
+    title: str | None = None
+
+
 class KnowledgeDocumentUpdate(BaseModel):
     title: str | None = None
     content: str | None = None
