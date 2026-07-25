@@ -311,3 +311,202 @@ No repository failures
 Phase 1 Complete
 
 Beginning Phase 2 — Knowledge Engine
+
+# M12 — Knowledge Ingestion Pipeline
+
+**Branch:** `feature/knowledge-ingestion-pipeline`
+
+**Status:** 🚧 In Progress
+
+**Started:** 2026-07-25
+
+## Objective
+
+Begin Phase 2 of the Knowledge Engine by transforming the existing
+KnowledgeDocument model into a full ingestion pipeline capable of
+accepting multiple knowledge sources (manual text, uploaded files,
+URLs, videos, images, audio, and external resources).
+
+---
+
+## Progress
+
+### Step 1 — Knowledge Model Expansion ✅
+
+Added ingestion metadata to `KnowledgeDocument`.
+
+New fields:
+
+- source_type
+- classification
+- original_filename
+- mime_type
+- file_size
+- storage_path
+- source_url
+- ingestion_status
+- metadata_json
+
+### Engineering Decisions
+
+**source_type**
+
+Stored as a plain string instead of a SQLAlchemy Enum.
+
+Reason:
+
+- Consistent with existing models
+- Eases future migrations
+- Avoids enum imports across layers
+- Matches current project conventions
+
+Expected values:
+
+- manual
+- upload
+- pdf
+- docx
+- txt
+- csv
+- markdown
+- image
+- audio
+- video
+- youtube_video
+- webpage
+- url
+
+---
+
+**ingestion_status**
+
+Also stored as a string.
+
+Expected lifecycle:
+
+pending
+→ uploaded
+→ processing
+→ indexed
+
+Failure states:
+
+- failed
+- archived
+
+---
+
+**classification**
+
+Reserved for AI-generated categorization.
+
+Planned categories include:
+
+- legal
+- finance
+- engineering
+- operations
+- research
+- marketing
+- sales
+- real_estate
+- contract
+- meeting
+- proposal
+- report
+- policy
+- manual
+
+---
+
+## Remaining Work
+
+- Step 2 – File upload endpoint
+- Step 3 – Source validation
+- Step 4 – File storage abstraction
+- Step 5 – MIME detection
+- Step 6 – URL ingestion
+- Step 7 – YouTube ingestion
+- Step 8 – Image ingestion
+- Step 9 – Audio ingestion
+- Step 10 – AI classification
+- Step 11 – Testing
+
+Architecture
+
+Introduced modular ingestion framework.
+
+Added BaseIngestor.
+
+Upload logic extracted from KnowledgeService.
+
+Prepared framework for URL, YouTube, Image, Audio and Video ingestion.
+
+No public API changes.
+
+### M12 - Knowledge Ingestion Refactor
+
+Status: Completed
+
+Highlights:
+- Introduced BaseIngestor abstraction.
+- Extracted upload ingestion into UploadIngestor.
+- Refactored KnowledgeService to delegate ingestion.
+- Added placeholder ingestors for URL, YouTube, Image, Audio, and Video.
+- No API behavior changed.
+- All 60 automated tests passed.
+
+### Added
+
+- URL ingestion pipeline
+- URLIngestor implementation
+- URL ingestion endpoint
+- HTML extraction
+- HTTP validation
+
+### Testing
+
+68 passing automated tests.
+
+## M12 — YouTube Ingestion
+
+### Status
+
+Completed
+
+### Completed
+
+- Added YouTubeIngestor
+- Added transcript ingestion
+- Added video metadata retrieval
+- Added /knowledge/ingest/youtube endpoint
+- Added metadata persistence
+- Added comprehensive tests
+- Total tests: 77 passing
+
+### Notes
+
+- Uses youtube-transcript-api
+- Metadata retrieved via YouTube oEmbed
+- External APIs mocked during testing
+
+## M12 — Image Ingestion
+
+### Status
+
+Completed
+
+### Completed
+
+- Added ImageIngestor
+- Added image upload endpoint
+- Added image metadata persistence
+- Added MIME validation
+- Added comprehensive image ingestion tests
+- Total tests: 83 passing
+
+### Notes
+
+- OCR intentionally deferred
+- AI vision intentionally deferred
+- Images stored without text extraction

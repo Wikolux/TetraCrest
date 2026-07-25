@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.models.knowledge_document import KnowledgeDocument
 from app.repositories.knowledge_document_repository import KnowledgeDocumentRepository
+from app.services.ingestion.image_ingestor import ImageIngestor
 from app.services.ingestion.upload_ingestor import UploadIngestor
 from app.services.ingestion.url_ingestor import URLIngestor
 from app.services.ingestion.youtube_ingestor import YouTubeIngestor
@@ -56,6 +57,16 @@ class KnowledgeService:
     ) -> KnowledgeDocument:
         ingestor = YouTubeIngestor(self.db)
         return ingestor.ingest(video_url, organization_id, created_by=created_by, title=title)
+
+    def ingest_image(
+        self,
+        file: UploadFile,
+        organization_id: int,
+        created_by: int | None = None,
+        title: str | None = None,
+    ) -> KnowledgeDocument:
+        ingestor = ImageIngestor(self.db, storage=self.storage)
+        return ingestor.ingest(file, organization_id, created_by=created_by, title=title)
 
     def list_for_organization(self, organization_id: int, skip: int = 0, limit: int = 20):
         return self.repo.get_by_organization(organization_id, skip=skip, limit=limit)

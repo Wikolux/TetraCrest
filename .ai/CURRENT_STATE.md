@@ -155,6 +155,40 @@ Tasks
 ✅ CRUD
 
 Knowledge
+### KnowledgeDocument Metadata
+
+The KnowledgeDocument model now supports ingestion metadata.
+
+Current source types:
+
+- manual
+- upload
+- pdf
+- docx
+- txt
+- csv
+- markdown
+- image
+- audio
+- video
+- youtube_video
+- webpage
+- url
+
+Current ingestion lifecycle:
+
+pending
+→ uploaded
+→ processing
+→ indexed
+
+Failure states:
+
+- failed
+- archived
+
+These are intentionally stored as string values rather than enums to
+maintain consistency across the current SQLAlchemy models.
 ✅ CRUD
 
 Memory
@@ -174,3 +208,100 @@ Testing
 ## Immediate Goal
 
 Complete M12 and prepare the platform for semantic retrieval.
+
+## Current Milestone
+
+### M12 — Knowledge Ingestion Pipeline
+
+Status: In Progress
+
+Completed:
+
+- Expanded KnowledgeDocument schema
+- Added ingestion metadata
+- Added source tracking
+- Added ingestion lifecycle fields
+
+Next:
+
+- Build upload API
+
+Knowledge Engine
+
+✔ Upload API
+
+✔ Upload Ingestion
+
+✔ Ingestion Framework
+
+□ URL Ingestion
+
+□ YouTube Ingestion
+
+□ Image Ingestion
+
+□ Audio Ingestion
+
+□ Video Ingestion
+
+□ AI Classification
+
+□ Semantic Search (M13)
+
+□ Knowledge Governance (M14)
+
+## Current Milestone
+
+M12 — Knowledge Ingestion Pipeline
+
+Completed
+- Upload ingestion
+- URL ingestion
+- Storage service
+- Modular ingestion framework
+- File upload API
+- URL ingestion API
+
+Tests
+
+68 passing
+
+Next
+
+Implement YouTube ingestion.
+
+## Knowledge Engine
+
+### Completed
+
+- Upload Ingestion
+- URL Ingestion
+- YouTube Ingestion
+- Modular Ingestion Framework
+- Storage Service
+- Knowledge metadata model
+
+### In Progress
+
+- Image Ingestion
+- Audio Ingestion
+- Video Ingestion
+- AI Classification
+
+## Knowledge Engine
+
+### Completed
+
+- Upload Ingestion
+- URL Ingestion
+- YouTube Ingestion
+- Image Ingestion
+- Modular Ingestion Framework
+- Storage Service
+- Knowledge metadata model
+
+### In Progress
+
+- Audio Ingestion
+- Video Ingestion
+- AI Classification

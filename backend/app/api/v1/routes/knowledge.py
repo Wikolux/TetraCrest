@@ -36,6 +36,18 @@ def ingest_document(
     )
 
 
+@router.post("/ingest/image", response_model=KnowledgeDocumentRead, status_code=status.HTTP_201_CREATED)
+def ingest_image_document(
+    organization_id: int = Form(...),
+    title: str | None = Form(None),
+    created_by: int | None = Form(None),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    service = KnowledgeService(db)
+    return service.ingest_image(file, organization_id, created_by=created_by, title=title)
+
+
 @router.post("/ingest/url", response_model=KnowledgeDocumentRead, status_code=status.HTTP_201_CREATED)
 def ingest_url_document(payload: KnowledgeURLIngestRequest, db: Session = Depends(get_db)):
     service = KnowledgeService(db)

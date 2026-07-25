@@ -24,6 +24,9 @@ venv/
 *.log
 logs/
 
+# Uploaded files
+backend/uploads/
+
 # Python cache
 .pytest_cache/
 .mypy_cache/

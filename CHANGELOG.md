@@ -1,73 +1,115 @@
 # Changelog
 
+All notable changes to this project are documented in this file.
+
+The format follows Keep a Changelog principles.
+
+---
+
 ## Unreleased
 
 ### Added
--
+- Modular Knowledge Ingestion Framework.
+- `BaseIngestor` abstraction for pluggable ingestion sources.
+- `UploadIngestor` implementation.
+- Placeholder ingestors for:
+  - URL
+  - YouTube
+  - Image
+  - Audio
+  - Video
 
 ### Changed
--
+- Refactored `KnowledgeService` to delegate ingestion responsibilities to dedicated ingestors.
+- Improved separation of concerns between storage, ingestion, and business logic.
 
-### Fixed
--
-
----
-
-## v0.2.0
-
-### Added
-
-- Pagination across all endpoints
-- Update endpoints
-- Delete endpoints
-
-### Tests
-
-- 50 passing
+### Testing
+- All automated tests passing (60/60).
 
 ---
-
-## v0.1.0
-
-### Added
-
-- Initial backend architecture
-- Authentication
-- CRUD foundation
 
 # v0.2.0
 
+**Release Date:** 2026-07-25
+
 ## Added
 
-- Pagination across all list APIs
-- CRUD update endpoints
-- CRUD delete endpoints
-- Update schemas
-- Tenant-aware authorization
-- Cross-tenant protection
-- Shared authorization dependencies
-- Comprehensive pagination tests
-- CRUD lifecycle tests
-- Tenant isolation tests
+- Pagination across all API list endpoints.
+- CRUD Update endpoints.
+- CRUD Delete endpoints.
+- Update schemas for all core resources.
+- Shared authorization dependencies.
+- Tenant-aware authorization.
+- Cross-tenant protection.
+- Knowledge Upload API.
+- File storage service.
+- Upload metadata model.
+- Upload validation.
+- Configurable upload directory.
+- Configurable upload size limit.
 
 ## Changed
 
-- Repository pagination standardized
-
-- Services updated for pagination
-
-- Routes now support PATCH and DELETE
+- Repository pagination standardized.
+- Services updated for pagination support.
+- Routes now support PATCH and DELETE.
+- Knowledge upload pipeline integrated into the Knowledge Engine.
 
 ## Security
 
-- Auth required for mutations
-
-- Cross-tenant updates prevented
-
-- Cross-tenant deletes prevented
+- Authentication required for all mutation endpoints.
+- Cross-tenant update protection.
+- Cross-tenant delete protection.
+- Upload MIME validation.
+- Upload size enforcement.
 
 ## Testing
 
-56+ passing tests
+- Pagination tests.
+- CRUD lifecycle tests.
+- Tenant isolation tests.
+- Upload ingestion tests.
 
-No regressions
+**Total:** 60 automated tests passing.
+
+---
+
+# v0.1.0
+
+## Added
+
+- Initial FastAPI backend.
+- Authentication.
+- Repository pattern.
+- Service layer.
+- CRUD foundation.
+- Database models.
+- Project architecture.
+- AI blueprint documentation.
+
+### Added
+
+- URL ingestion support
+- URL endpoint
+- HTML text extraction
+
+### Added
+
+- URL ingestion
+- YouTube ingestion
+- Transcript retrieval
+- YouTube metadata extraction
+
+### Testing
+
+- 77 passing automated tests
+
+### Added
+
+- Image ingestion
+- Image upload endpoint
+- Image metadata persistence
+
+### Testing
+
+- 83 passing automated tests
