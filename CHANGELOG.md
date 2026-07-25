@@ -123,3 +123,14 @@ The format follows Keep a Changelog principles.
 ### Testing
 
 89 passing automated tests
+
+### Added
+
+- Video ingestion pipeline
+- VideoIngestor
+- Video upload endpoint
+- Video metadata persistence
+
+### Testing
+
+- 95 passing automated tests

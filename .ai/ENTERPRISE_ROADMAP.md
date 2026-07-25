@@ -84,17 +84,15 @@ Knowledge Engine
 
 Completed
 
-✔ Upload Ingestion
+✔ Upload ingestion
 ✔ Upload API
-✔ URL Ingestion
+✔ URL ingestion
 ✔ URL API
-✔ Metadata Persistence
-✔ Modular Ingestion Architecture
+✔ Metadata persistence
+✔ Modular ingestion architecture
+
 ✔ YouTube Ingestion
 ✔ Image Ingestion
 ✔ Audio Ingestion
-
-Remaining
-
-□ Video Ingestion
+✔ Video Ingestion
 □ AI Classification

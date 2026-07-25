@@ -7,6 +7,7 @@ from app.services.ingestion.audio_ingestor import AudioIngestor
 from app.services.ingestion.image_ingestor import ImageIngestor
 from app.services.ingestion.upload_ingestor import UploadIngestor
 from app.services.ingestion.url_ingestor import URLIngestor
+from app.services.ingestion.video_ingestor import VideoIngestor
 from app.services.ingestion.youtube_ingestor import YouTubeIngestor
 from app.services.storage_service import StorageService
 from database import SessionLocal
@@ -77,6 +78,16 @@ class KnowledgeService:
         title: str | None = None,
     ) -> KnowledgeDocument:
         ingestor = AudioIngestor(self.db, storage=self.storage)
+        return ingestor.ingest(file, organization_id, created_by=created_by, title=title)
+
+    def ingest_video(
+        self,
+        file: UploadFile,
+        organization_id: int,
+        created_by: int | None = None,
+        title: str | None = None,
+    ) -> KnowledgeDocument:
+        ingestor = VideoIngestor(self.db, storage=self.storage)
         return ingestor.ingest(file, organization_id, created_by=created_by, title=title)
 
     def list_for_organization(self, organization_id: int, skip: int = 0, limit: int = 20):

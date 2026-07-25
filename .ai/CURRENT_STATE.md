@@ -300,9 +300,10 @@ Implement YouTube ingestion.
 - Storage Service
 - Knowledge metadata model
 - Audio Ingestion
+- Video Ingestion
 
 ### In Progress
 
 
-- Video Ingestion
+
 - AI Classification

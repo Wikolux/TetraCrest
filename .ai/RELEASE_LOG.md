@@ -535,3 +535,20 @@ Completed
 ### Testing
 
 89 passing tests
+
+### M12 — Video Ingestion
+
+**Added**
+- VideoIngestor implementation
+- Video upload endpoint
+- Video MIME validation
+- Video metadata persistence
+- Video ingestion tests
+
+**Architecture**
+- Delegation through KnowledgeService
+- StorageService reused
+- BaseIngestor reused
+
+**Testing**
+- 95 automated tests passing
