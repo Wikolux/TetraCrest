@@ -77,6 +77,28 @@ Status
 
 IN PROGRESS
 
+Completed
+
+✔ Memory Data Models
+
+Upcoming
+
+□ Memory Repository
+□ Memory Service
+□ Conversation Service
+□ Memory APIs
+□ Conversation APIs
+□ Embedding Infrastructure
+□ Embedding Service
+□ Vector Storage
+□ Semantic Search
+□ Context Retrieval
+□ Memory Ranking
+□ Integration Tests
+□ Documentation
+
+
+
 Objectives
 
 □ Embedding Infrastructure

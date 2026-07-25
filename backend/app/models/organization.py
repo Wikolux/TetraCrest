@@ -22,3 +22,6 @@ class Organization(Base):
     knowledge_documents = relationship("KnowledgeDocument", back_populates="organization")
     memory_records = relationship("MemoryRecord", back_populates="organization")
     tasks = relationship("Task", back_populates="organization")
+    memories = relationship("Memory", back_populates="organization")
+    conversations = relationship("Conversation", back_populates="organization")
+    conversation_messages = relationship("ConversationMessage", back_populates="organization")

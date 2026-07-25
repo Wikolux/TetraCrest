@@ -12,6 +12,10 @@ The format follows Keep a Changelog principles.
 
 ### Added
 
+- Memory model
+- Conversation model
+- ConversationMessage model
+
 - M13 AI Memory Engine development started.
 
 ### Changed
