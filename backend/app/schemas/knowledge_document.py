@@ -20,6 +20,13 @@ class KnowledgeDocumentCreate(BaseModel):
     metadata_json: str | None = None
 
 
+class KnowledgeURLIngestRequest(BaseModel):
+    url: str
+    organization_id: int
+    created_by: int | None = None
+    title: str | None = None
+
+
 class KnowledgeDocumentUpdate(BaseModel):
     title: str | None = None
     content: str | None = None

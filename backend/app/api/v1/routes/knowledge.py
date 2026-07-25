@@ -6,6 +6,7 @@ from app.schemas.knowledge_document import (
     KnowledgeDocumentCreate,
     KnowledgeDocumentRead,
     KnowledgeDocumentUpdate,
+    KnowledgeURLIngestRequest,
 )
 from app.services.knowledge_service import KnowledgeService
 from database import get_db
@@ -31,6 +32,14 @@ def ingest_document(
     service = KnowledgeService(db)
     return service.ingest_upload(
         file, organization_id, created_by=created_by, title=title, content=content
+    )
+
+
+@router.post("/ingest/url", response_model=KnowledgeDocumentRead, status_code=status.HTTP_201_CREATED)
+def ingest_url_document(payload: KnowledgeURLIngestRequest, db: Session = Depends(get_db)):
+    service = KnowledgeService(db)
+    return service.ingest_url(
+        payload.url, payload.organization_id, created_by=payload.created_by, title=payload.title
     )
 
 
