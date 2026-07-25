@@ -2,6 +2,7 @@ from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.models.knowledge_document import KnowledgeDocument
+from app.services.classification_service import ClassificationService
 from app.services.ingestion.base_ingestor import BaseIngestor
 from app.services.storage_service import FileTooLargeError, StorageService
 
@@ -50,14 +51,24 @@ class UploadIngestor(BaseIngestor):
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)
             ) from exc
 
+        final_title = title or file.filename or "Untitled"
+        final_content = content or ""
+        classification = ClassificationService().classify(
+            title=final_title,
+            content=final_content,
+            original_filename=file.filename,
+            mime_type=file.content_type,
+        )
+
         return self._persist(
             organization_id=organization_id,
             created_by=created_by,
-            title=title or file.filename or "Untitled",
-            content=content or "",
+            title=final_title,
+            content=final_content,
             original_filename=file.filename,
             mime_type=file.content_type,
             file_size=file_size,
             storage_path=storage_path,
             ingestion_status="completed",
+            classification=classification,
         )

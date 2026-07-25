@@ -6,6 +6,7 @@ import httpx
 from fastapi import HTTPException, status
 
 from app.models.knowledge_document import KnowledgeDocument
+from app.services.classification_service import ClassificationService
 from app.services.ingestion.base_ingestor import BaseIngestor
 
 REQUEST_TIMEOUT_SECONDS = 10.0
@@ -65,13 +66,17 @@ class URLIngestor(BaseIngestor):
         html = self._download(url)
         extracted_title, extracted_text = self._extract(html)
 
+        final_title = title or extracted_title or url
+        classification = ClassificationService().classify(title=final_title, content=extracted_text)
+
         return self._persist(
             organization_id=organization_id,
             created_by=created_by,
-            title=title or extracted_title or url,
+            title=final_title,
             content=extracted_text,
             source_url=url,
             ingestion_status="completed",
+            classification=classification,
         )
 
     def _validate_url(self, url: str) -> None:

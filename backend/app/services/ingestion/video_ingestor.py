@@ -2,6 +2,7 @@ from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.models.knowledge_document import KnowledgeDocument
+from app.services.classification_service import ClassificationService
 from app.services.ingestion.base_ingestor import BaseIngestor
 from app.services.storage_service import FileTooLargeError, StorageService
 
@@ -20,7 +21,9 @@ class VideoIngestor(BaseIngestor):
     Stores the file only - no OCR, transcription, frame extraction,
     thumbnails, ffmpeg, or AI processing of any kind. Those are later
     phases; `content` is always empty here since nothing extracts anything
-    from the video yet.
+    from the video yet. Classification still runs against whatever signal
+    is available (title, filename, mime type), via the shared
+    ClassificationService, rather than being hardcoded.
     """
 
     source_type = "video"
@@ -49,14 +52,23 @@ class VideoIngestor(BaseIngestor):
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)
             ) from exc
 
+        final_title = title or file.filename or "Untitled"
+        classification = ClassificationService().classify(
+            title=final_title,
+            content="",
+            original_filename=file.filename,
+            mime_type=file.content_type,
+        )
+
         return self._persist(
             organization_id=organization_id,
             created_by=created_by,
-            title=title or file.filename or "Untitled",
+            title=final_title,
             content="",
             original_filename=file.filename,
             mime_type=file.content_type,
             file_size=file_size,
             storage_path=storage_path,
             ingestion_status="completed",
+            classification=classification,
         )

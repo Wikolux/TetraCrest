@@ -7,6 +7,7 @@ from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import CouldNotRetrieveTranscript
 
 from app.models.knowledge_document import KnowledgeDocument
+from app.services.classification_service import ClassificationService
 from app.services.ingestion.base_ingestor import BaseIngestor
 
 REQUEST_TIMEOUT_SECONDS = 10.0
@@ -39,14 +40,18 @@ class YouTubeIngestor(BaseIngestor):
         video_title = metadata.get("title")
         channel_name = metadata.get("author_name")
 
+        final_title = title or video_title or video_url
+        classification = ClassificationService().classify(title=final_title, content=transcript_text)
+
         return self._persist(
             organization_id=organization_id,
             created_by=created_by,
-            title=title or video_title or video_url,
+            title=final_title,
             content=transcript_text,
             source_url=video_url,
             ingestion_status="completed",
             metadata_json=json.dumps({"video_id": video_id, "channel": channel_name}),
+            classification=classification,
         )
 
     def _extract_video_id(self, video_url: str) -> str:
