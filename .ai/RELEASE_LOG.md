@@ -510,3 +510,28 @@ Completed
 - OCR intentionally deferred
 - AI vision intentionally deferred
 - Images stored without text extraction
+
+## M12 — Audio Ingestion
+
+### Status
+
+Completed
+
+### Added
+
+- AudioIngestor
+- Audio upload endpoint
+- Audio metadata persistence
+- Audio MIME validation
+- Audio ingestion tests
+
+### Notes
+
+- Audio stored only
+- No transcription
+- No Whisper integration
+- No speech recognition
+
+### Testing
+
+89 passing tests

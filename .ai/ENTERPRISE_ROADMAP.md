@@ -88,13 +88,13 @@ Completed
 ✔ Upload API
 ✔ URL Ingestion
 ✔ URL API
-✔ YouTube Ingestion
-✔ Image Ingestion
 ✔ Metadata Persistence
 ✔ Modular Ingestion Architecture
+✔ YouTube Ingestion
+✔ Image Ingestion
+✔ Audio Ingestion
 
 Remaining
 
-□ Audio Ingestion
 □ Video Ingestion
 □ AI Classification

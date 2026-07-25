@@ -299,9 +299,10 @@ Implement YouTube ingestion.
 - Modular Ingestion Framework
 - Storage Service
 - Knowledge metadata model
+- Audio Ingestion
 
 ### In Progress
 
-- Audio Ingestion
+
 - Video Ingestion
 - AI Classification

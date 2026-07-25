@@ -113,3 +113,13 @@ The format follows Keep a Changelog principles.
 ### Testing
 
 - 83 passing automated tests
+
+### Added
+
+- Audio ingestion
+- Audio upload endpoint
+- Audio metadata persistence
+
+### Testing
+
+89 passing automated tests
