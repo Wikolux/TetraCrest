@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
     database_url: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/tetracrest"
     redis_url: str = "redis://localhost:6379/0"
+    upload_storage_path: str = "uploads"
+    max_upload_size_bytes: int = 10 * 1024 * 1024
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

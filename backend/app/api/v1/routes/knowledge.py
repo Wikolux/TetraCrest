@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_organization_id
@@ -17,6 +17,21 @@ router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 def create_document(payload: KnowledgeDocumentCreate, db: Session = Depends(get_db)):
     service = KnowledgeService(db)
     return service.create(payload.title, payload.content, payload.organization_id, payload.created_by)
+
+
+@router.post("/ingest", response_model=KnowledgeDocumentRead, status_code=status.HTTP_201_CREATED)
+def ingest_document(
+    organization_id: int = Form(...),
+    title: str | None = Form(None),
+    content: str | None = Form(None),
+    created_by: int | None = Form(None),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    service = KnowledgeService(db)
+    return service.ingest_upload(
+        file, organization_id, created_by=created_by, title=title, content=content
+    )
 
 
 @router.get("/organization/{organization_id}", response_model=list[KnowledgeDocumentRead])

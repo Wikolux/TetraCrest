@@ -15,6 +15,19 @@ class KnowledgeDocument(Base):
     content = Column(Text, nullable=False)
     document_type = Column(String(100), nullable=False, default="general")
     source = Column(String(255), nullable=True)
+
+    # Ingestion metadata. Fields only, per the current milestone - no ingestion
+    # pipeline reads or writes these yet.
+    source_type = Column(String(50), nullable=False, default="manual")
+    classification = Column(String(100), nullable=True)
+    original_filename = Column(String(255), nullable=True)
+    mime_type = Column(String(150), nullable=True)
+    file_size = Column(Integer, nullable=True)
+    storage_path = Column(String(500), nullable=True)
+    source_url = Column(String(1000), nullable=True)
+    ingestion_status = Column(String(50), nullable=False, default="pending")
+    metadata_json = Column(Text, nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

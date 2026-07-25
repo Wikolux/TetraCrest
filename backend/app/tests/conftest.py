@@ -9,6 +9,17 @@ import database
 from app.models.user import User
 from main import app
 from security import create_access_token
+from settings import get_settings
+
+
+@pytest.fixture(autouse=True)
+def _isolated_upload_storage(tmp_path, monkeypatch):
+    """Redirect file uploads to a pytest tmp dir so tests never write into the
+    real project's uploads/ directory."""
+    monkeypatch.setenv("UPLOAD_STORAGE_PATH", str(tmp_path / "uploads"))
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 @pytest.fixture()
