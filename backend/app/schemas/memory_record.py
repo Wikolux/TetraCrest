@@ -8,6 +8,12 @@ class MemoryRecordCreate(BaseModel):
     organization_id: int
 
 
+class MemoryRecordUpdate(BaseModel):
+    memory_type: str | None = None
+    key: str | None = None
+    value: str | None = None
+
+
 class MemoryRecordResponse(BaseModel):
     id: int
     memory_type: str

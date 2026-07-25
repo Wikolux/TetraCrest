@@ -14,5 +14,18 @@ class KnowledgeService:
         doc = KnowledgeDocument(title=title, content=content, organization_id=organization_id, created_by=created_by)
         return self.repo.create(doc)
 
-    def list_for_organization(self, organization_id: int):
-        return self.repo.get_by_organization(organization_id)
+    def list_for_organization(self, organization_id: int, skip: int = 0, limit: int = 20):
+        return self.repo.get_by_organization(organization_id, skip=skip, limit=limit)
+
+    def update(self, document_id: int, organization_id: int, **fields) -> KnowledgeDocument | None:
+        document = self.repo.get_by_id_for_organization(document_id, organization_id)
+        if not document:
+            return None
+        return self.repo.update(document, **fields)
+
+    def delete(self, document_id: int, organization_id: int) -> bool:
+        document = self.repo.get_by_id_for_organization(document_id, organization_id)
+        if not document:
+            return False
+        self.repo.delete(document)
+        return True

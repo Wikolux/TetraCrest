@@ -7,6 +7,12 @@ class OrganizationCreate(BaseModel):
     description: str | None = None
 
 
+class OrganizationUpdate(BaseModel):
+    name: str | None = None
+    slug: str | None = None
+    description: str | None = None
+
+
 class OrganizationResponse(BaseModel):
     id: int
     name: str

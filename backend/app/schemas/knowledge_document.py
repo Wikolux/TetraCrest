@@ -10,6 +10,14 @@ class KnowledgeDocumentCreate(BaseModel):
     created_by: int | None = None
 
 
+class KnowledgeDocumentUpdate(BaseModel):
+    title: str | None = None
+    content: str | None = None
+    document_type: str | None = None
+    source: str | None = None
+    created_by: int | None = None
+
+
 class KnowledgeDocumentResponse(BaseModel):
     id: int
     title: str

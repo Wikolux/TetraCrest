@@ -14,5 +14,18 @@ class MemoryService:
         record = MemoryRecord(key=key, value=value, organization_id=organization_id, memory_type=memory_type)
         return self.repo.create(record)
 
-    def list_for_organization(self, organization_id: int):
-        return self.repo.get_by_organization(organization_id)
+    def list_for_organization(self, organization_id: int, skip: int = 0, limit: int = 20):
+        return self.repo.get_by_organization(organization_id, skip=skip, limit=limit)
+
+    def update(self, record_id: int, organization_id: int, **fields) -> MemoryRecord | None:
+        record = self.repo.get_by_id_for_organization(record_id, organization_id)
+        if not record:
+            return None
+        return self.repo.update(record, **fields)
+
+    def delete(self, record_id: int, organization_id: int) -> bool:
+        record = self.repo.get_by_id_for_organization(record_id, organization_id)
+        if not record:
+            return False
+        self.repo.delete(record)
+        return True

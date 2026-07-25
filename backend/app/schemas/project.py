@@ -9,6 +9,13 @@ class ProjectCreate(BaseModel):
     owner_id: int | None = None
 
 
+class ProjectUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    status: str | None = None
+    owner_id: int | None = None
+
+
 class ProjectResponse(BaseModel):
     id: int
     name: str

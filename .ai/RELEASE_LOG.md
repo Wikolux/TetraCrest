@@ -204,3 +204,22 @@ Victor Chinyeaka
 Lead Engineer
 
 TetraCrest
+## Milestone M11 — Tenant Query Scoping Enforcement
+
+### Added
+
+- Tenant-aware repository lookups
+- Authenticated PATCH endpoints
+- Authenticated DELETE endpoints
+- Organization-aware dependency injection
+- Cross-tenant security tests
+
+### Security
+
+- Cross-tenant mutations prevented
+- Identical 404 responses for unauthorized and missing resources
+- JWT user resolution before mutation
+
+### Tests
+
+56 tests passing

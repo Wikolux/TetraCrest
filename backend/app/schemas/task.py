@@ -11,6 +11,14 @@ class TaskCreate(BaseModel):
     organization_id: int
 
 
+class TaskUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    status: str | None = None
+    priority: str | None = None
+    assignee_id: int | None = None
+
+
 class TaskResponse(BaseModel):
     id: int
     title: str

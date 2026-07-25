@@ -16,7 +16,7 @@ class Organization(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    users = relationship("User", back_populates="organization")
+    users = relationship("User", back_populates="organization", cascade="all, delete-orphan")
     projects = relationship("Project", back_populates="organization")
     audit_logs = relationship("AuditLog", back_populates="organization")
     knowledge_documents = relationship("KnowledgeDocument", back_populates="organization")

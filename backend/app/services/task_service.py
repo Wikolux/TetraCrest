@@ -14,5 +14,18 @@ class TaskService:
         task = Task(title=title, organization_id=organization_id, project_id=project_id, assignee_id=assignee_id, description=description, status="pending")
         return self.repo.create(task)
 
-    def list_for_project(self, project_id: int):
-        return self.repo.get_by_project(project_id)
+    def list_for_project(self, project_id: int, skip: int = 0, limit: int = 20):
+        return self.repo.get_by_project(project_id, skip=skip, limit=limit)
+
+    def update(self, task_id: int, organization_id: int, **fields) -> Task | None:
+        task = self.repo.get_by_id_for_organization(task_id, organization_id)
+        if not task:
+            return None
+        return self.repo.update(task, **fields)
+
+    def delete(self, task_id: int, organization_id: int) -> bool:
+        task = self.repo.get_by_id_for_organization(task_id, organization_id)
+        if not task:
+            return False
+        self.repo.delete(task)
+        return True

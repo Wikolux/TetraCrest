@@ -16,3 +16,25 @@ class OrganizationService:
 
     def get_by_id(self, organization_id: int) -> Organization | None:
         return self.repo.get_by_id(organization_id)
+
+    def list_all(self, skip: int = 0, limit: int = 20):
+        return self.repo.get_all(skip=skip, limit=limit)
+
+    def update(self, organization_id: int, caller_organization_id: int, **fields) -> Organization | None:
+        # An Organization *is* the tenant, so "belongs to the caller's tenant" means
+        # the target id must match the caller's own organization id.
+        organization = self.repo.get_by_id_for_organization(
+            organization_id, caller_organization_id, tenant_field="id"
+        )
+        if not organization:
+            return None
+        return self.repo.update(organization, **fields)
+
+    def delete(self, organization_id: int, caller_organization_id: int) -> bool:
+        organization = self.repo.get_by_id_for_organization(
+            organization_id, caller_organization_id, tenant_field="id"
+        )
+        if not organization:
+            return False
+        self.repo.delete(organization)
+        return True
