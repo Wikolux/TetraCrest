@@ -578,3 +578,32 @@ Tests: 128 passing
 Notes
 
 The Knowledge Engine is now capable of ingesting multiple document sources through a unified architecture. AI Classification currently uses a deterministic rule engine and is designed to be replaced by an LLM implementation in future milestones without changing the ingestion interfaces.
+
+# M13 AI Memory Engine
+
+Status
+
+IN PROGRESS
+
+Started
+
+July 25, 2026
+
+Objectives
+
+- Build embedding infrastructure.
+- Implement embedding service.
+- Introduce vector storage.
+- Build semantic search.
+- Implement context retrieval.
+- Add memory ranking.
+- Build memory APIs.
+- Add integration tests.
+- Complete documentation.
+
+Notes
+
+- M12 completed successfully.
+- Development begins from the stable v0.3.0 release.
+- All new work will follow the established Service → Repository → API architecture.
+- Development will proceed incrementally with one completed feature committed at a time.

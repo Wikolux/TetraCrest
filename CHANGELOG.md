@@ -8,6 +8,21 @@ The format follows Keep a Changelog principles.
 
 ## Unreleased
 
+## Unreleased
+
+### Added
+
+- M13 AI Memory Engine development started.
+
+### Changed
+
+-
+
+### Fixed
+
+
+-
+
 ### Added
 
 - AI Classification service

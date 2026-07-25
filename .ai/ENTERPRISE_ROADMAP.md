@@ -73,6 +73,30 @@ knowledge sources.
 
 ⬜ M13 Semantic Search
 
+Status
+
+IN PROGRESS
+
+Objectives
+
+□ Embedding Infrastructure
+
+□ Embedding Service
+
+□ Vector Storage
+
+□ Semantic Search
+
+□ Context Retrieval
+
+□ Memory Ranking
+
+□ Memory APIs
+
+□ Integration Tests
+
+□ Documentation
+
 ⬜ M14 Knowledge Governance
 
 M12 — Knowledge Ingestion Pipeline
