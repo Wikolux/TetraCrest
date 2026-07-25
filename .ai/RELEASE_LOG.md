@@ -552,3 +552,29 @@ Completed
 
 **Testing**
 - 95 automated tests passing
+
+## M12 — Knowledge Engine Complete
+
+Status: Completed
+
+Completed:
+
+- Upload ingestion
+- URL ingestion
+- YouTube ingestion
+- Image ingestion
+- Audio ingestion
+- Video ingestion
+- ClassificationService
+- Shared ingestion architecture
+- Metadata persistence
+
+Statistics
+
+Routes: 39
+
+Tests: 128 passing
+
+Notes
+
+The Knowledge Engine is now capable of ingesting multiple document sources through a unified architecture. AI Classification currently uses a deterministic rule engine and is designed to be replaced by an LLM implementation in future milestones without changing the ingestion interfaces.

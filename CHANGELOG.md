@@ -9,6 +9,15 @@ The format follows Keep a Changelog principles.
 ## Unreleased
 
 ### Added
+
+- AI Classification service
+- Automatic document categorization
+- Classification integration across all ingestion pipelines
+
+### Completed
+
+- Milestone M12 – Knowledge Engine
+### Added
 - Modular Knowledge Ingestion Framework.
 - `BaseIngestor` abstraction for pluggable ingestion sources.
 - `UploadIngestor` implementation.
