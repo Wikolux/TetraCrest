@@ -1,19 +1,19 @@
-from app.core.constants import VECTOR_STORE_NULL, VECTOR_STORE_PGVECTOR
+from app.core.enums import VectorStoreProviderName
 from app.services.vector_store.base_store import VectorStore, VectorStoreError
 from app.services.vector_store.null_store import NullVectorStore
 from app.services.vector_store.pgvector_store import PgVectorStore
 from settings import Settings, get_settings
 
 _STORES = {
-    VECTOR_STORE_NULL: lambda settings: NullVectorStore(),
-    VECTOR_STORE_PGVECTOR: lambda settings: PgVectorStore(
+    VectorStoreProviderName.NULL: lambda settings: NullVectorStore(),
+    VectorStoreProviderName.PGVECTOR: lambda settings: PgVectorStore(
         table_name=settings.vector_store_table, dimensions=settings.embedding_dimensions
     ),
 }
 
 
 def _validate(settings: Settings) -> None:
-    if settings.vector_store_provider != VECTOR_STORE_PGVECTOR:
+    if settings.vector_store_provider != VectorStoreProviderName.PGVECTOR:
         return
     if not settings.vector_store_table:
         raise VectorStoreError(

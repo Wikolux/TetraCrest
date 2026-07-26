@@ -31,3 +31,16 @@ def test_health_check_always_returns_true():
     store = NullVectorStore()
 
     assert store.health_check() is True
+
+
+def test_search_always_returns_no_matches():
+    store = NullVectorStore()
+    store.save_vector("memory-1", [0.1, 0.2, 0.3], metadata={"organization_id": 1})
+
+    assert store.search([0.1, 0.2, 0.3], organization_id=1) == []
+
+
+def test_search_accepts_optional_resource_type_and_limit():
+    store = NullVectorStore()
+
+    assert store.search([0.1, 0.2], organization_id=1, resource_type="memory", limit=5) == []

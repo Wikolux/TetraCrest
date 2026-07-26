@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 
+from app.services.vector_store.types import SearchResult
+
 
 class VectorStoreError(Exception):
     """Raised when a vector store fails to save, fetch, delete, or report health.
@@ -39,4 +41,22 @@ class VectorStore(ABC):
     @abstractmethod
     def health_check(self) -> bool:
         """Return whether the backend is reachable and able to serve requests."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def search(
+        self,
+        query_vector: list[float],
+        organization_id: int,
+        resource_type: str | None = None,
+        limit: int = 10,
+    ) -> list[SearchResult]:
+        """Return the vectors nearest to query_vector for organization_id,
+        optionally narrowed to resource_type, ordered nearest-first.
+
+        This is a storage-level nearest-neighbor lookup, not a semantic
+        search feature: no ranking/reranking policy, score thresholding, or
+        multi-strategy retrieval lives here or anywhere in this milestone -
+        that orchestration belongs to a future service that calls this.
+        """
         raise NotImplementedError

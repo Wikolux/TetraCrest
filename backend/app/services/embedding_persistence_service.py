@@ -4,12 +4,6 @@ from app.services.vector_store.store_factory import VectorStoreFactory
 from app.services.vector_store.types import VectorMetadata
 
 
-def _normalize_metadata(metadata: VectorMetadata | dict | None) -> dict | None:
-    if isinstance(metadata, VectorMetadata):
-        return metadata.to_dict()
-    return metadata
-
-
 class EmbeddingPersistenceService:
     """Coordinates embedding generation with vector storage.
 
@@ -28,11 +22,30 @@ class EmbeddingPersistenceService:
         self.embedding_service = embedding_service or EmbeddingService()
         self.vector_store = vector_store or VectorStoreFactory.create()
 
+    def _normalize_metadata(self, metadata: VectorMetadata | dict | None) -> dict:
+        """Convert metadata to a plain dict and stamp on the real embedding_model.
+
+        embedding_model always reflects the provider actually in use - it's
+        set here, not left to the caller, and overwrites any value a
+        caller-supplied VectorMetadata/dict might already carry. That's the
+        only source of truth callers get for "which model produced this
+        vector" without needing to know which provider is configured.
+        """
+        if isinstance(metadata, VectorMetadata):
+            payload = metadata.to_dict()
+        elif metadata is None:
+            payload = {}
+        else:
+            payload = dict(metadata)
+
+        payload["embedding_model"] = self.embedding_service.provider.model_name
+        return payload
+
     def generate_and_store(
         self, vector_id: str, text: str, metadata: VectorMetadata | dict | None = None
     ) -> list[float]:
         vector = self.embedding_service.generate_embedding(text)
-        self.vector_store.save_vector(vector_id, vector, metadata=_normalize_metadata(metadata))
+        self.vector_store.save_vector(vector_id, vector, metadata=self._normalize_metadata(metadata))
         return vector
 
     def generate_and_store_many(
@@ -56,7 +69,7 @@ class EmbeddingPersistenceService:
         vectors = self.embedding_service.generate_embeddings(texts)
 
         for vector_id, vector, item_metadata in zip(vector_ids, vectors, resolved_metadata):
-            self.vector_store.save_vector(vector_id, vector, metadata=_normalize_metadata(item_metadata))
+            self.vector_store.save_vector(vector_id, vector, metadata=self._normalize_metadata(item_metadata))
 
         return vectors
 

@@ -1,17 +1,20 @@
-from app.core.constants import EMBEDDING_PROVIDER_OPENAI
+from app.core.enums import EmbeddingProviderName
 from app.services.embedding.base_provider import EmbeddingProvider, EmbeddingProviderError
 from app.services.embedding.openai_provider import OpenAIEmbeddingProvider
 from settings import Settings, get_settings
 
 _PROVIDERS = {
-    EMBEDDING_PROVIDER_OPENAI: lambda settings: OpenAIEmbeddingProvider(
-        api_key=settings.openai_api_key, model=settings.embedding_model
+    EmbeddingProviderName.OPENAI: lambda settings: OpenAIEmbeddingProvider(
+        api_key=settings.openai_api_key,
+        model=settings.embedding_model,
+        max_retries=settings.embedding_max_retries,
+        base_delay_seconds=settings.embedding_retry_base_delay_seconds,
     ),
 }
 
 
 def _validate(settings: Settings) -> None:
-    if settings.embedding_provider == EMBEDDING_PROVIDER_OPENAI and not settings.openai_api_key:
+    if settings.embedding_provider == EmbeddingProviderName.OPENAI and not settings.openai_api_key:
         raise EmbeddingProviderError(
             "Embedding provider 'openai' requires OPENAI_API_KEY to be configured"
         )

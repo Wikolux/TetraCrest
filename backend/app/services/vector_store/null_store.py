@@ -1,4 +1,5 @@
 from app.services.vector_store.base_store import VectorStore
+from app.services.vector_store.types import SearchResult
 
 
 class NullVectorStore(VectorStore):
@@ -7,7 +8,8 @@ class NullVectorStore(VectorStore):
     Lets the application depend on a VectorStore today - construct one,
     hold a reference to it - without any vector database existing yet.
     Every method behaves safely: nothing is persisted, lookups always miss,
-    deletes and health checks always succeed.
+    deletes and health checks always succeed, and search always returns no
+    matches (there's nothing to search).
     """
 
     def save_vector(self, vector_id: str, vector: list[float], metadata: dict | None = None) -> None:
@@ -21,3 +23,12 @@ class NullVectorStore(VectorStore):
 
     def health_check(self) -> bool:
         return True
+
+    def search(
+        self,
+        query_vector: list[float],
+        organization_id: int,
+        resource_type: str | None = None,
+        limit: int = 10,
+    ) -> list[SearchResult]:
+        return []

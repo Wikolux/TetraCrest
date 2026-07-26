@@ -1346,3 +1346,29 @@ Future Semantic Search
 Status
 
 Complete
+
+## M13.8 — Embedding Infrastructure Complete
+
+Completed
+
+- Embedding Provider abstraction
+- Provider Factory
+- OpenAI Provider
+- Embedding Service
+- Embedding Persistence Service
+- Vector Store abstraction
+- Vector Store Factory
+- PgVector implementation
+- Tenant-aware vector storage
+- Search abstraction
+- Retry infrastructure
+- Metrics abstraction
+- Metrics factory
+- Safe metrics recorder
+- Official schema initialization
+- Full graceful degradation
+- Infrastructure hardening
+
+Result
+
+Embedding platform frozen and ready for Semantic Search.

@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.core.constants import EMBEDDING_PROVIDER_OPENAI, VECTOR_STORE_NULL
+from app.core.enums import EmbeddingProviderName, MetricsRecorderName, VectorStoreProviderName
 
 
 class Settings(BaseSettings):
@@ -18,12 +18,15 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     upload_storage_path: str = "uploads"
     max_upload_size_bytes: int = 10 * 1024 * 1024
-    embedding_provider: str = EMBEDDING_PROVIDER_OPENAI
+    embedding_provider: str = EmbeddingProviderName.OPENAI.value
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1536
+    embedding_max_retries: int = 3
+    embedding_retry_base_delay_seconds: float = 0.5
     openai_api_key: str | None = None
-    vector_store_provider: str = VECTOR_STORE_NULL
+    vector_store_provider: str = VectorStoreProviderName.NULL.value
     vector_store_table: str = "embedding_vectors"
+    metrics_recorder_provider: str = MetricsRecorderName.LOGGING.value
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

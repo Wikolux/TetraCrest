@@ -237,6 +237,70 @@ NOT STARTED
 
 - M13 — AI Memory Engine
 
+## M13 — Semantic Memory Engine
+
+Status
+
+🟡 IN PROGRESS
+
+Completed
+
+✅ Memory Models
+
+✅ Conversation Models
+
+✅ Repositories
+
+✅ AI Memory Service
+
+✅ Conversation Service
+
+✅ Conversation Message Service
+
+✅ Memory APIs
+
+✅ Conversation APIs
+
+✅ Conversation Message APIs
+
+✅ Embedding Infrastructure
+
+✅ Embedding Provider
+
+✅ Provider Factory
+
+✅ Embedding Service
+
+✅ Embedding Persistence Service
+
+✅ Vector Store
+
+✅ Vector Store Factory
+
+✅ PgVector Storage
+
+✅ Tenant-aware Storage
+
+✅ Search Abstraction
+
+✅ Retry Infrastructure
+
+✅ Metrics Infrastructure
+
+Upcoming
+
+⬜ Semantic Search
+
+⬜ Context Retrieval
+
+⬜ Memory Ranking
+
+⬜ Search APIs
+
+⬜ Integration Tests
+
+⬜ Documentation
+
 ## ⏳ Upcoming Milestones
 
 - M14 — Knowledge Governance

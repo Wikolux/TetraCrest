@@ -34,3 +34,16 @@ class EmbeddingProvider(ABC):
         key being present) without spending a real embedding call on it.
         """
         return True
+
+    @property
+    def model_name(self) -> str:
+        """Return the identifier of the embedding model this provider uses.
+
+        Concrete (not abstract) with a generic default so existing/future
+        providers aren't forced to implement it; override to return the
+        real model identifier (e.g. "text-embedding-3-small") so
+        EmbeddingPersistenceService can record which model produced each
+        stored vector - important later for migrations/re-indexing when
+        multiple models' vectors coexist.
+        """
+        return "unknown"

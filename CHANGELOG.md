@@ -258,3 +258,22 @@ Testing
 - Added factory-based provider resolution.
 - Added reusable metadata and vector identity utilities.
 - Strengthened test coverage for embedding infrastructure.
+
+## Added
+
+- Complete embedding infrastructure
+- Embedding persistence
+- Provider factories
+- Vector store abstraction
+- PgVector implementation
+- Metrics infrastructure
+- Retry support
+- Tenant-aware vector storage
+- Search abstraction
+
+## Improved
+
+- Infrastructure dependency inversion
+- Factory-based architecture
+- Graceful degradation
+- Observability isolation

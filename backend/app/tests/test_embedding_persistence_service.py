@@ -8,9 +8,10 @@ from app.services.vector_store.types import VectorMetadata
 
 
 class _FakeProvider(EmbeddingProvider):
-    def __init__(self, vectors, healthy: bool = True):
+    def __init__(self, vectors, healthy: bool = True, model_name: str = "fake-model"):
         self.vectors = vectors
         self.healthy = healthy
+        self._model_name = model_name
         self.received_texts: list[str] | None = None
         self.embed_calls = 0
 
@@ -21,6 +22,10 @@ class _FakeProvider(EmbeddingProvider):
 
     def health_check(self) -> bool:
         return self.healthy
+
+    @property
+    def model_name(self) -> str:
+        return self._model_name
 
 
 class _FakeVectorStore(VectorStore):
@@ -47,6 +52,9 @@ class _FakeVectorStore(VectorStore):
     def health_check(self):
         self.health_checks += 1
         return self.healthy
+
+    def search(self, query_vector, organization_id, resource_type=None, limit=10):
+        return []
 
 
 def _service(vectors=None):
@@ -78,7 +86,7 @@ def test_generate_and_store_saves_vector_exactly_once():
     assert len(vector_store.saved) == 1
 
 
-def test_generate_and_store_passes_dict_metadata_through_unchanged():
+def test_generate_and_store_passes_dict_metadata_through_with_embedding_model_added():
     service = _service()
     vector_store = service.vector_store
     metadata = {"organization_id": 7, "source": "memory"}
@@ -87,8 +95,10 @@ def test_generate_and_store_passes_dict_metadata_through_unchanged():
 
     vector_id, vector, saved_metadata = vector_store.saved[0]
     assert vector_id == "memory:1"
-    assert saved_metadata == metadata
-    assert saved_metadata is metadata
+    assert saved_metadata == {"organization_id": 7, "source": "memory", "embedding_model": "fake-model"}
+    # the caller's own dict is never mutated - a copy is stored instead
+    assert metadata == {"organization_id": 7, "source": "memory"}
+    assert saved_metadata is not metadata
 
 
 def test_generate_and_store_converts_vector_metadata_to_dict():
@@ -103,7 +113,23 @@ def test_generate_and_store_converts_vector_metadata_to_dict():
         "organization_id": 7,
         "resource_type": "memory",
         "resource_id": 1,
+        "embedding_model": "fake-model",
     }
+
+
+def test_generate_and_store_overwrites_caller_supplied_embedding_model():
+    # embedding_model always reflects the provider actually used, never a
+    # caller-supplied (possibly stale) value.
+    service = _service()
+    vector_store = service.vector_store
+    metadata = VectorMetadata(
+        organization_id=7, resource_type="memory", resource_id=1, embedding_model="some-other-model"
+    )
+
+    service.generate_and_store("memory:1", "hello world", metadata=metadata)
+
+    _, _, saved_metadata = vector_store.saved[0]
+    assert saved_metadata["embedding_model"] == "fake-model"
 
 
 def test_generate_and_store_returns_generated_vector():
@@ -236,19 +262,22 @@ def test_generate_and_store_many_passes_per_item_metadata_through():
 
     saved_metadata = [call[2] for call in service.vector_store.saved]
     assert saved_metadata == [
-        {"organization_id": 1},
-        {"organization_id": 2, "resource_type": "memory", "resource_id": 9},
+        {"organization_id": 1, "embedding_model": "fake-model"},
+        {"organization_id": 2, "resource_type": "memory", "resource_id": 9, "embedding_model": "fake-model"},
     ]
 
 
-def test_generate_and_store_many_defaults_metadata_to_none_per_item():
+def test_generate_and_store_many_stamps_embedding_model_when_no_metadata_given():
     service = _service()
     provider = service.embedding_service.provider
     provider.vectors = [[0.1], [0.2]]
 
     service.generate_and_store_many(["a:1", "a:2"], ["one", "two"])
 
-    assert [call[2] for call in service.vector_store.saved] == [None, None]
+    assert [call[2] for call in service.vector_store.saved] == [
+        {"embedding_model": "fake-model"},
+        {"embedding_model": "fake-model"},
+    ]
 
 
 def test_generate_and_store_many_rejects_mismatched_vector_ids_and_texts():
