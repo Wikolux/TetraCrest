@@ -12,6 +12,16 @@ The format follows Keep a Changelog principles.
 
 ### Added
 
+- MemoryRepository
+- ConversationRepository
+- ConversationMessageRepository
+
+### Changed
+
+- Optimized conversation history retrieval with a composite index
+
+### Added
+
 - Memory model
 - Conversation model
 - ConversationMessage model
@@ -20,6 +30,7 @@ The format follows Keep a Changelog principles.
 
 ### Changed
 
+- Added a composite index on ConversationMessage (conversation_id, created_at) to optimize conversation history retrieval.
 -
 
 ### Fixed
@@ -162,3 +173,26 @@ The format follows Keep a Changelog principles.
 ### Testing
 
 - 95 passing automated tests
+
+## AI Memory Engine (M13)
+
+### Added
+
+- Memory model
+- Conversation model
+- Conversation message model
+
+- Memory repository
+- Conversation repository
+- Conversation message repository
+
+- AI Memory Service
+- Conversation Service
+- Conversation Message Service
+
+### Notes
+
+Established the foundational architecture for persistent AI memory,
+including tenant-scoped repositories, immutable conversation history,
+and service orchestration in preparation for semantic search and
+retrieval-augmented AI.

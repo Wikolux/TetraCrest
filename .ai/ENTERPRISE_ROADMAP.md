@@ -1,11 +1,10 @@
-code .ai/ENTERPRISE_ROADMAP.md
-## Phase 1 — Operating Layer
+# Enterprise Roadmap
 
-✅ M9 Pagination Everywhere
+---
 
-✅ M10 Update & Delete Endpoints
+# Phase 1 — Operating Layer
 
-✅ M11 Tenant Scoping
+## ✅ M9 — Pagination Everywhere
 
 Status
 
@@ -13,134 +12,178 @@ COMPLETE
 
 ---
 
-## Phase 2 — Knowledge Engine
+## ✅ M10 — Update & Delete Endpoints
 
-🟡 # M12 — Knowledge Ingestion Pipeline
+Status
+
+COMPLETE
+
+---
+
+## ✅ M11 — Tenant Scoping
+
+Status
+
+COMPLETE
+
+---
+
+# Phase 2 — Knowledge Engine
+
+## ✅ M12 — Knowledge Ingestion Pipeline
+
+Status
+
+COMPLETE
+
+### Objective
+
+Build a complete knowledge ingestion pipeline capable of accepting:
+
+- Manual text
+- Uploaded files
+- URLs
+- Images
+- Audio
+- Videos
+- External knowledge sources
+
+### Completed
+
+✔ Upload Ingestion
+
+✔ Upload API
+
+✔ URL Ingestion
+
+✔ URL API
+
+✔ Metadata Persistence
+
+✔ Modular Ingestion Architecture
+
+✔ YouTube Ingestion
+
+✔ Image Ingestion
+
+✔ Audio Ingestion
+
+✔ Video Ingestion
+
+✔ AI Classification
+
+✔ Comprehensive Automated Tests
+
+---
+
+# Phase 3 — AI Memory Engine
+
+## ⬜ M13 — AI Memory Engine
 
 **Status:** 🚧 IN PROGRESS
 
 ## Objective
 
-Build a complete knowledge ingestion pipeline capable of accepting
-manual text, uploaded files, URLs, images, audio, videos, and external
-knowledge sources.
+Build a persistent AI memory engine capable of storing conversations,
+retrieving historical context, managing long-term organizational memory,
+and preparing the platform for semantic search and retrieval-augmented AI.
 
 ---
 
 ## Completed
 
-- ✅ Expanded KnowledgeDocument model
-- ✅ Added ingestion metadata fields
-- ✅ Added source tracking fields
-- ✅ Added ingestion lifecycle fields
+✔ Memory Data Models
+✔ Conversation Data Models
+✔ Conversation Message Models
+
+✔ Memory Repository
+✔ Conversation Repository
+✔ Conversation Message Repository
+
+✔ AI Memory Service
+✔ Conversation Service
+✔ Conversation Message Service
 
 ---
 
 ## Upcoming
 
+### Phase 1
+□ Memory APIs
+
 ### Phase 2
-- [ ] File Upload API
+□ Conversation APIs
 
 ### Phase 3
-- [ ] Storage Service
+□ Embedding Infrastructure
 
 ### Phase 4
-- [ ] MIME Type Detection
+□ Embedding Service
 
 ### Phase 5
-- [ ] Source Type Detection
+□ Vector Storage
 
 ### Phase 6
-- [ ] URL Ingestion
+□ Semantic Search
 
 ### Phase 7
-- [ ] YouTube Ingestion
+□ Context Retrieval
 
 ### Phase 8
-- [ ] Image Ingestion
+□ Memory Ranking
 
 ### Phase 9
-- [ ] Audio Ingestion
+□ Integration Tests
 
 ### Phase 10
-- [ ] AI Classification
+□ Documentation
+---
 
-### Phase 11
-- [ ] Semantic Search Integration
+# Phase 4 — Knowledge Governance
 
-### Phase 12
-- [ ] Testing
-
-⬜ M13 Semantic Search
+## ⬜ M14 — Knowledge Governance
 
 Status
 
-IN PROGRESS
+NOT STARTED
 
-Completed
+### Planned Objectives
 
-✔ Memory Data Models
+□ Knowledge Policies
 
-Upcoming
+□ Document Lifecycle Management
 
-□ Memory Repository
-□ Memory Service
-□ Conversation Service
-□ Memory APIs
-□ Conversation APIs
-□ Embedding Infrastructure
-□ Embedding Service
-□ Vector Storage
-□ Semantic Search
-□ Context Retrieval
-□ Memory Ranking
-□ Integration Tests
-□ Documentation
+□ Retention Policies
 
+□ Versioning
 
+□ Approval Workflows
 
-Objectives
+□ Audit Enhancements
 
-□ Embedding Infrastructure
+□ Governance APIs
 
-□ Embedding Service
+□ Governance Dashboard
 
-□ Vector Storage
-
-□ Semantic Search
-
-□ Context Retrieval
-
-□ Memory Ranking
-
-□ Memory APIs
-
-□ Integration Tests
+□ Testing
 
 □ Documentation
 
-⬜ M14 Knowledge Governance
+---
 
-M12 — Knowledge Ingestion Pipeline
+# Overall Progress
 
-Status
-🟡 IN PROGRESS
+## ✅ Completed Milestones
 
-Knowledge Engine
+- M9 — Pagination Everywhere
+- M10 — Update & Delete Endpoints
+- M11 — Tenant Scoping
+- M12 — Knowledge Ingestion Pipeline
 
-Completed
+## 🚧 Current Milestone
 
-✔ Upload ingestion
-✔ Upload API
-✔ URL ingestion
-✔ URL API
-✔ Metadata persistence
-✔ Modular ingestion architecture
+- M13 — AI Memory Engine
 
-✔ Youtube Ingestion
-✔ Image Ingestion
-✔ Audio ingestion
-✔ Video ingestion
-✔ AI classification
+## ⏳ Upcoming Milestones
 
-✅ M12 COMPLETE
+- M14 — Knowledge Governance
