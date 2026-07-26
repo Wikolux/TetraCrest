@@ -196,3 +196,17 @@ Established the foundational architecture for persistent AI memory,
 including tenant-scoped repositories, immutable conversation history,
 and service orchestration in preparation for semantic search and
 retrieval-augmented AI.
+
+Added
+
+- Memory API endpoints
+- Conversation API endpoints
+- Conversation Message API endpoints
+- Request/response schemas
+- API validation
+- Tenant-aware routing
+
+Testing
+
+- Added 56 API tests
+- Total test suite: 233 passing

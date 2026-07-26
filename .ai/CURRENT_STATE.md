@@ -396,3 +396,27 @@ Building the API layer for persistent AI memory.
 ### Next Milestone
 
 Memory & Conversation APIs
+
+Current Milestone
+
+M13 — AI Memory Engine
+
+Status
+
+In Progress
+
+Completed
+
+• Memory models
+• Conversation models
+• Repository layer
+• AI Memory Service
+• Conversation Service
+• Conversation Message Service
+• Authenticated Memory APIs
+• Authenticated Conversation APIs
+• Authenticated Conversation Message APIs
+
+Next Target
+
+Embedding Infrastructure

@@ -7,8 +7,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.api.v1.routes.auth import router as auth_router
+from app.api.v1.routes.conversation_messages import router as conversation_messages_router
+from app.api.v1.routes.conversations import router as conversations_router
 from app.api.v1.routes.health import router as health_router
 from app.api.v1.routes.knowledge import router as knowledge_router
+from app.api.v1.routes.memories import router as memories_router
 from app.api.v1.routes.memory import router as memory_router
 from app.api.v1.routes.organizations import router as organizations_router
 from app.api.v1.routes.projects import router as projects_router
@@ -50,6 +53,9 @@ app.include_router(projects_router, prefix=settings.api_prefix)
 app.include_router(knowledge_router, prefix=settings.api_prefix)
 app.include_router(memory_router, prefix=settings.api_prefix)
 app.include_router(tasks_router, prefix=settings.api_prefix)
+app.include_router(memories_router, prefix=settings.api_prefix)
+app.include_router(conversations_router, prefix=settings.api_prefix)
+app.include_router(conversation_messages_router, prefix=settings.api_prefix)
 
 
 @app.exception_handler(EnterpriseException)
