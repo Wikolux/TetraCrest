@@ -12,6 +12,8 @@ The format follows Keep a Changelog principles.
 
 ### Added
 
+
+
 - MemoryRepository
 - ConversationRepository
 - ConversationMessageRepository
@@ -210,3 +212,49 @@ Testing
 
 - Added 56 API tests
 - Total test suite: 233 passing
+
+## [Unreleased]
+
+### Added
+
+- AI Memory Engine service layer
+- Conversation service
+- Conversation Message service
+- Memory APIs
+- Conversation APIs
+- Conversation Message APIs
+
+- Embedding provider abstraction
+- OpenAI embedding provider
+- Embedding provider factory
+
+- Vector Store abstraction
+- Null Vector Store
+- PgVector Store
+- Vector Store factory
+
+- Embedding Persistence Service
+
+- Batch embedding generation
+- Batch vector persistence
+
+- Vector ID helper
+- Vector Metadata abstraction
+
+- Provider health checks
+- Vector Store health checks
+
+- Shared architecture constants
+
+### Changed
+
+- Refactored EmbeddingService into a single-purpose embedding generation service.
+- Moved embedding persistence orchestration into EmbeddingPersistenceService.
+- Centralized provider and vector store configuration validation.
+
+### Internal
+
+- Improved dependency inversion across the AI Memory architecture.
+- Added factory-based provider resolution.
+- Added reusable metadata and vector identity utilities.
+- Strengthened test coverage for embedding infrastructure.

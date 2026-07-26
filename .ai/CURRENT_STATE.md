@@ -371,32 +371,58 @@ Next
 
 AI Memory Service
 
-# Current Milestone
+# Current State
 
-## M13 — AI Memory Engine
+## Active Milestone
 
-**Status:** 🚧 IN PROGRESS
+M13 — AI Memory Engine
 
-### Completed
+Status:
+🟡 IN PROGRESS
 
-- ✅ Memory model
-- ✅ Conversation model
-- ✅ Conversation message model
-- ✅ Memory repository
-- ✅ Conversation repository
-- ✅ Conversation message repository
-- ✅ AI Memory Service
-- ✅ Conversation Service
-- ✅ Conversation Message Service
+Progress:
+██████████████░░░░ 75%
 
-### Current Focus
+Completed
 
-Building the API layer for persistent AI memory.
+✅ AI Memory data models
+✅ Conversation models
+✅ Conversation message models
+✅ Repository layer
+✅ AI Memory service
+✅ Conversation service
+✅ Conversation Message service
+✅ Memory APIs
+✅ Conversation APIs
+✅ Conversation Message APIs
 
-### Next Milestone
+✅ Embedding abstraction
+✅ OpenAI embedding provider
+✅ Embedding service
+✅ Embedding provider factory
 
-Memory & Conversation APIs
+✅ Vector Store abstraction
+✅ Null Vector Store
+✅ PgVector Store
+✅ Vector Store Factory
 
+✅ Embedding Persistence Service
+✅ Batch embedding generation
+✅ Batch vector persistence
+✅ Vector metadata
+✅ Vector ID helper
+✅ Shared architecture constants
+✅ Provider health checks
+✅ Vector store health checks
+✅ Factory validation
+
+Current Focus
+
+➡ M13.8 — Embedding Persistence Integration
+
+Next Milestone
+
+Connect the AI Memory Engine to automatic embedding generation and vector persistence during Memory and Conversation creation.
 Current Milestone
 
 M13 — AI Memory Engine

@@ -1307,3 +1307,42 @@ Completed
 Test Status
 
 233 tests passing
+
+## M13.7.5 — Embedding Infrastructure Hardening
+
+Completed
+
+- Added Vector ID helper
+- Added Vector Metadata abstraction
+- Added shared architecture constants
+- Introduced provider health checks
+- Introduced vector store health checks
+- Added batch embedding generation
+- Added batch vector persistence
+- Refactored EmbeddingService into a single-purpose generation service
+- Introduced EmbeddingPersistenceService
+- Added fail-fast provider validation
+- Added fail-fast vector store validation
+- Added Provider Factory
+- Added Vector Store Factory improvements
+
+Result
+
+The embedding subsystem now follows strict separation of concerns:
+
+Embedding Generation
+↓
+
+Embedding Persistence
+
+↓
+
+Vector Storage
+
+↓
+
+Future Semantic Search
+
+Status
+
+Complete
