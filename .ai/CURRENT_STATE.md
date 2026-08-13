@@ -1,3 +1,5 @@
+> **Reconciliation notice (M20.2 — Planning Documentation Reconciliation):** everything below this notice, down through "Embedding infrastructure is frozen and ready for Semantic Search," is the project's historical log through M13 and is preserved verbatim for context — it is **not** deleted, but it is superseded by the "CURRENT STATE — RECONCILED (M20.2)" section at the very end of this file, which reflects what was actually built afterward (the AI Operating System: Platform, Kernel, Runtime, Agent Framework, Executive Agent, Tool Framework, Research Specialist, Vision Framework, the M19 completion pass, architecture enforcement, and the documentation sprint) and is the authoritative current state as of this reconciliation. Jump to that section for the real current status; read the rest of this file for how the project actually got there.
+
 # Architecture Assessment Report
 
 ## Current Architecture
@@ -485,3 +487,54 @@ Completed
 Status
 
 Embedding infrastructure is frozen and ready for Semantic Search.
+
+---
+
+# CURRENT STATE — RECONCILED (M20.2)
+
+**This section supersedes everything above it.** Everything above is preserved, unedited, as the historical record through M13 (embedding infrastructure). What follows is what was actually built after that point, reconciled against the real codebase (not against the plan that was in flight at the time — see the note on Phase 4/M14 below).
+
+## What Actually Happened After M13
+
+The plan in flight at the end of the log above was **M14 — Knowledge Governance** (document lifecycle, retention, versioning, approval workflows). That did not happen next. Engineering instead pivoted to building an **AI Operating System** under `app/services/ai/` — a decision this document did not previously record. M14 — Knowledge Governance is not cancelled; it is simply still not started, and is no longer next in line. See "Revised Next Milestones" below.
+
+## Milestone History (Completed, Post-M13)
+
+| Milestone | Name | Summary |
+|---|---|---|
+| M13 (continued) | Semantic Search, Ranking, Context, Prompt Builder | Completed the exact "Upcoming" list M13 had recorded above (Semantic Retrieval, Context Builder, Memory Ranking, Prompt Context Assembly): `SemanticSearchService`, `RankingEngine`/`DefaultRankingStrategy`, the `ContextBuilder` pipeline, the `PromptBuilder`. |
+| — (Platform) | AI Platform | `ProviderName`/`Capability` enums, `ConversationProvider` ABC, `ConversationProviderFactory`/`Registry` — the first step toward the AI Operating System. |
+| — (Kernel) | AI Operating System Kernel | `app/services/ai/kernel/` — the platform's foundational, capability-agnostic execution contracts (`ExecutionContext`, `KernelRuntime`, retry/timeout/cancellation/event/metrics/scheduling/state contracts). Deliberately architecture-first: `KernelRuntime.execute()` validates its input and raises `NotImplementedError` — this is a declared contract layer, not (yet) a working engine. |
+| — (Runtime) | AI Runtime | `app/services/ai/runtime/` — the concrete, fully-working conversation execution engine (`AIRuntime`/`RuntimeExecutor`): retry, timeout, cancellation, middleware, hooks, events. Does not compose the Kernel (see above) — a currently-open architectural gap, documented rather than hidden. |
+| M16.5 / M16.6 | Unified Execution Context / Execution Identity Hardening | `SharedExecutionContext` introduced as the one execution identity every subsystem composes; `identity_fields()`/`correlation_id`/`causation_id`/`parent_execution_id` propagated platform-wide; `RuntimeRequest.parent_shared` wired so a delegated execution tree shares one correlation chain in practice. |
+| M16 | AI Agent Framework | `app/services/ai/agents/` — `BaseAgent` ABC, `AgentContext`, `AgentRegistry`/`Factory`/`Executor`, `AgentState` machine, `AgentEvent`, `AgentPlanner`/`AgentMemory` ABCs (both intentionally unimplemented contracts to date). |
+| M17 | Executive Agent ("PID 1") | `app/services/ai/agents/executive/` — `ExecutiveAgent`, deterministic `ExecutivePlanner`, capability-matched `Dispatcher`, `TaskGraph` (topological task ordering). 128 tests. |
+| M17 | Universal Tool Framework | `app/services/ai/tools/` — `BaseTool` ABC, `ToolRegistry`/`Factory`/`Manager`/`Executor`, middleware/hooks, pure-Python schema/validation. 187 tests. No concrete tool built yet — architecture proven against test fakes only. |
+| M18 | Specialist Agent Framework & Research Agent | `app/services/ai/agents/specialists/` — `SpecialistAgent` ABC, registry/dispatcher/factory/coordinator, adapters; `research/` — the first concrete specialist (`ResearchAgent`). 207 tests. |
+| M19 | Universal Vision Framework | `app/services/ai/vision/` — a shared, provider-agnostic OS capability (not an agent) for image/document/extraction/analysis understanding, mirroring the Conversation/Runtime relationship exactly. Zero vendor/SDK/OCR dependencies. 232 tests. |
+| M19 (completion pass) | Platform Unification | `GenericProviderRegistry`, `GenericEvent`/`EventPublisher`, `GenericMiddleware`/`GenericMiddlewarePipeline` introduced and back-applied to Conversation/Runtime/Agent/Executive/Specialist/Tool/Vision; a platform-wide event-hashing gap fixed. Zero regressions (1987 → 2016 tests). |
+| ADS-1 | Architecture Documentation Sprint | 35 documents under `docs/` (`00_OVERVIEW/` through `07_ENTERPRISE/`, plus `ADR/`) covering the whole AI Operating System, built from the actual implementation rather than the plan. |
+| M20.1 | Architecture Enforcement | `app/tests/architecture/` — an AST-based (not grep-based) dependency validator turning `docs/01_ARCHITECTURE/Dependency_Rules.md` into an executable, pytest-run contract. Found and corrected three real documentation gaps in the process (Executive/Research Agent's direct Runtime dependency, `shared/`'s dependency on `providers/`) — zero production code changed. 2029 tests passing. |
+| M20.2 | Planning Documentation Reconciliation | This section, and the corresponding update to `.ai/ENTERPRISE_ROADMAP.md`. |
+
+## Current Platform Maturity
+
+- **Fully implemented, tested, provider-agnostic-by-construction**: Conversation Framework, Vision Framework, Tool Framework, Agent Framework, Executive Agent, Specialist Framework, Research Agent. **Zero concrete vendor providers exist yet** for Conversation or Vision, and zero concrete tools exist for the Tool Framework — every one of these has been proven correct against hand-written test fakes only, not a real vendor integration.
+- **Architecture-only, not yet functional**: the Kernel (`KernelRuntime.execute()` raises `NotImplementedError`); the `AgentMemory` contract (no implementation — `MemoryAdapter` covers retrieval only, not the full remember/forget contract).
+- **Enforced automatically, not just documented**: package dependency boundaries (`app/tests/architecture/`), zero vendor/HTTP/OCR imports platform-wide, zero regressions maintained across 2029 tests.
+- **Not yet started**: Knowledge Governance (the original M14), Learning/Product/Finance/Business Architect specialist agents, Audio/Speech capability frameworks, Organization Operating Systems, self-improving AI, production deployment/observability hardening.
+
+Full detail: `docs/00_OVERVIEW/Vision.md`, `docs/00_OVERVIEW/Roadmap.md`, `docs/01_ARCHITECTURE/System_Architecture.md`.
+
+## Revised Next Milestones
+
+The "Next milestone" note earlier in this file (M13 → M14 Knowledge Governance) is superseded by what actually happened (see above). Knowledge Governance remains real, un-started future work — it is simply no longer immediately next. The actual near-term roadmap, per `docs/00_OVERVIEW/Roadmap.md`:
+
+- Learning Agent, Product Agent, Finance Agent, Business Architect (new specialists, following the `SpecialistAgent` extension pattern)
+- Audio Framework, Speech Framework (new shared OS capabilities, following the Vision Framework's exact pattern)
+- Knowledge Governance (the original M14 — still open)
+- Organization Operating Systems, self-improving AI, Enterprise Deployment (longer-range)
+
+## Test Suite Size
+
+2029 automated tests passing platform-wide as of M20.1 (up from 128 at M12 completion, 233 at the point M13's APIs were added, growing through 1755 pre-M19, 1987 post-M19, 2016 post-M19-completion-pass, to 2029 with architecture enforcement).

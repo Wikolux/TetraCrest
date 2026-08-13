@@ -2,14 +2,21 @@ from app.core.enums import VectorStoreProviderName
 from app.services.vector_store.base_store import VectorStore, VectorStoreError
 from app.services.vector_store.null_store import NullVectorStore
 from app.services.vector_store.pgvector_store import PgVectorStore
+from app.services.vector_store.registry import VectorStoreRegistry
 from settings import Settings, get_settings
 
-_STORES = {
-    VectorStoreProviderName.NULL: lambda settings: NullVectorStore(),
-    VectorStoreProviderName.PGVECTOR: lambda settings: PgVectorStore(
+VectorStoreRegistry.register(VectorStoreProviderName.NULL, lambda settings: NullVectorStore())
+VectorStoreRegistry.register(
+    VectorStoreProviderName.PGVECTOR,
+    lambda settings: PgVectorStore(
         table_name=settings.vector_store_table, dimensions=settings.embedding_dimensions
     ),
-}
+)
+
+# Backward-compatible alias: a plain dict snapshot of the registry,
+# preserved for existing direct imports (see app/tests/test_enums.py).
+# Not a live view - registration happens once, at import time, above.
+_STORES = VectorStoreRegistry.all_registered()
 
 
 def _validate(settings: Settings) -> None:
@@ -32,7 +39,7 @@ class VectorStoreFactory:
     Mirrors EmbeddingProviderFactory: the only place in the codebase that
     knows which store names exist and how each one is constructed. Adding a
     new backend (pgvector, Pinecone, Weaviate, Qdrant, Chroma, Redis) means
-    adding one entry here, nothing else.
+    registering it in VectorStoreRegistry, nothing else.
 
     Configuration is validated here, at creation time, rather than left to
     fail on the first save/get/delete call - an unsupported provider name
@@ -43,7 +50,7 @@ class VectorStoreFactory:
     @staticmethod
     def create(settings: Settings | None = None) -> VectorStore:
         settings = settings or get_settings()
-        build = _STORES.get(settings.vector_store_provider)
+        build = VectorStoreRegistry.get(settings.vector_store_provider)
         if build is None:
             raise VectorStoreError(
                 f"Unsupported vector store provider: {settings.vector_store_provider}"

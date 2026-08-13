@@ -27,6 +27,25 @@ class BaseRepository(Generic[ModelType]):
             return None
         return obj
 
+    def get_many_for_organization(
+        self, ids: list[int], organization_id: int, tenant_field: str = "organization_id"
+    ) -> list[ModelType]:
+        """Fetch multiple rows by id in a single query, scoped to a tenant.
+
+        Batches what would otherwise be N get_by_id_for_organization() calls
+        (e.g. hydrating many vector-search matches at once) into one query.
+        Ids that don't exist or belong to another organization are simply
+        absent from the result, never raised - the same "don't reveal what
+        exists elsewhere" rule get_by_id_for_organization already follows.
+        """
+        if not ids:
+            return []
+        return (
+            self.db.query(self.model)
+            .filter(self.model.id.in_(ids), getattr(self.model, tenant_field) == organization_id)
+            .all()
+        )
+
     def get_all(self, skip: int = 0, limit: int = 20):
         return self.db.query(self.model).offset(skip).limit(limit).all()
 
