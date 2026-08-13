@@ -150,10 +150,60 @@ class UserPatternResponse(StrEnum):
 
 
 class ExperimentStatus(StrEnum):
-    """An Experiment's own lifecycle (P3 §13) - PROPOSED until the user
-    actually starts it, ACTIVE while the adjustment is in effect,
-    REVIEWED once the measurement has actually been compared."""
+    """An Experiment's own lifecycle (P3 §13, extended P4 §3) - the three
+    P3 values (PROPOSED/ACTIVE/REVIEWED) are unchanged; P4 adds the
+    explicit approval boundary (§4) and the terminal user-decision states
+    (§14) the P3 lifecycle never needed since P3 never activated an
+    experiment or reviewed one against real evidence.
+
+    Valid transitions (enforced in experiment_flow.py, not just named
+    here): PROPOSED -> APPROVED | STOPPED (explicit rejection) |
+    unchanged (DEFER); APPROVED -> ACTIVE; ACTIVE -> READY_FOR_REVIEW |
+    EXPIRED; READY_FOR_REVIEW -> REVIEWED | EXPIRED; REVIEWED -> KEPT |
+    MODIFIED | STOPPED | ACTIVE (CONTINUE, with an extended review_date).
+    Every transition is a new persisted version under the same
+    experiment_id (append-only, matching Pattern's own convention) - the
+    full lifecycle is always retrievable as history, never overwritten."""
 
     PROPOSED = "proposed"
+    APPROVED = "approved"
     ACTIVE = "active"
+    READY_FOR_REVIEW = "ready_for_review"
     REVIEWED = "reviewed"
+    KEPT = "kept"
+    MODIFIED = "modified"
+    STOPPED = "stopped"
+    EXPIRED = "expired"
+
+
+class ExperimentOutcome(StrEnum):
+    """The deterministic result of comparing an Experiment's measurement
+    against its baseline (P4 §11) - never an LLM's subjective judgement
+    (§11's own explicit instruction). INSUFFICIENT_DATA is distinct from
+    UNCHANGED: the former means there was not enough evidence to compare
+    at all (zero observations on one side); the latter means there was
+    evidence and it showed no notable movement. INCONCLUSIVE is distinct
+    from both: the magnitude of change would otherwise read as IMPROVED
+    or WORSENED, but the sample is too small to say so with more than
+    LOW confidence (§10's own "early signal" caution) - see
+    experiment_measurement.py's classify_outcome()."""
+
+    IMPROVED = "improved"
+    UNCHANGED = "unchanged"
+    WORSENED = "worsened"
+    INCONCLUSIVE = "inconclusive"
+    INSUFFICIENT_DATA = "insufficient_data"
+
+
+class ExperimentUserDecision(StrEnum):
+    """What the user chooses to do after an experiment is reviewed (P4
+    §13) - kept structurally distinct from ExperimentStatus itself
+    because the decision is the user's own input, while the status is
+    Personal OS's own resulting state (the same fact/response separation
+    UserPatternResponse already established for Pattern confirmation)."""
+
+    KEEP = "keep"
+    MODIFY = "modify"
+    STOP = "stop"
+    CONTINUE = "continue"
+    DEFER = "defer"

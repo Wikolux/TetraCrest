@@ -43,6 +43,10 @@ _PERSONAL_OS_MODULES = (
     "app.services.personal_os.pattern_detectors",
     "app.services.personal_os.pattern_repository",
     "app.services.personal_os.pattern_flow",
+    "app.services.personal_os.experiment",
+    "app.services.personal_os.experiment_measurement",
+    "app.services.personal_os.experiment_repository",
+    "app.services.personal_os.experiment_flow",
 )
 
 _FORBIDDEN_SPECIALIST_FRAGMENTS = (
@@ -125,6 +129,7 @@ def test_personal_os_mints_no_new_memory_framework_namespace():
         "app.services.personal_os.repository",
         "app.services.personal_os.sql_repository",
         "app.services.personal_os.pattern_repository",
+        "app.services.personal_os.experiment_repository",
     ):
         source = inspect.getsource(importlib.import_module(module_path))
         assert ".remember(" not in source, f"{module_path} calls .remember() - unexpected AgentMemory write"
@@ -166,6 +171,25 @@ def test_pattern_detectors_and_evidence_reader_do_not_touch_the_runtime():
         assert not any("runtime_adapter" in name or "prompt_builder" in name for name in imported), (
             f"{module_path} imports a Runtime/PromptBuilder seam - detection must remain deterministic"
         )
+
+
+def test_experiment_flow_only_reaches_the_runtime_through_runtime_adapter():
+    """P4 §12's own narration step (explaining an already-decided
+    comparison result) must follow the same seam every other Personal OS
+    flow already uses - no second, ad hoc Runtime invocation path."""
+    imported = _imported_modules("app.services.personal_os.experiment_flow")
+    assert any(name == "app.services.ai.agents.specialists.runtime_adapter" for name in imported)
+    assert not any(name == "app.services.ai.runtime.runtime" for name in imported)
+
+
+def test_experiment_measurement_does_not_touch_the_runtime():
+    """P4 §18: metric extraction, baseline/measurement calculation,
+    comparison, and outcome classification must all stay deterministic -
+    this module may import neither RuntimeAdapter nor PromptBuilder."""
+    imported = _imported_modules("app.services.personal_os.experiment_measurement")
+    assert not any("runtime_adapter" in name or "prompt_builder" in name for name in imported), (
+        "experiment_measurement.py imports a Runtime/PromptBuilder seam - measurement must remain deterministic"
+    )
 
 
 def test_personal_os_package_lives_outside_the_frozen_ai_operating_system():

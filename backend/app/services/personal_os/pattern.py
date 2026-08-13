@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
 from app.services.personal_os.reasoning import GrowthRecommendation, Hypothesis, ObservedFact
-from app.services.personal_os.shared.types import Confidence, ExperimentStatus, PatternStatus, PatternType
+from app.services.personal_os.shared.types import Confidence, PatternStatus, PatternType
 
 
 @dataclass(frozen=True)
@@ -92,31 +92,3 @@ class Pattern:
         len(evidence), so this can never drift from the evidence it
         counts (a real risk if this were its own settable field)."""
         return len(self.evidence)
-
-
-@dataclass(frozen=True)
-class Experiment:
-    """A small, optional learning experiment responding to one Pattern's
-    own recommendation (P3 §13) - never mandatory; most Patterns will
-    never have one. Observe -> Adjust -> Measure, made concrete: what
-    changes (adjustment), for how long (review_date), and what specifically
-    gets remeasured (measurement_plan) to answer the hypothesis."""
-
-    experiment_id: str
-    pattern_id: str
-    hypothesis_statement: str
-    adjustment: str
-    measurement_plan: str
-    started_on: date
-    review_date: date | None = None
-    status: ExperimentStatus = ExperimentStatus.PROPOSED
-    review_outcome: str = ""
-    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-
-    def __post_init__(self) -> None:
-        if not self.hypothesis_statement:
-            raise ValueError("Experiment.hypothesis_statement is required")
-        if not self.adjustment:
-            raise ValueError("Experiment.adjustment is required")
-        if not self.measurement_plan:
-            raise ValueError("Experiment.measurement_plan is required")

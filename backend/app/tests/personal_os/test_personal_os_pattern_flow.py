@@ -10,6 +10,7 @@ from app.services.ai.agents.specialists.runtime_adapter import RuntimeAdapter
 from app.services.ai.runtime.types import RuntimeResponse
 from app.services.personal_os.daily_intent import DailyIntent, PlannedActivity
 from app.services.personal_os.evening import EveningReflection, InMemoryEveningReflectionRepository
+from app.services.personal_os.pattern_evidence import EvidenceWindow
 from app.services.personal_os.pattern_flow import PatternDetectionFlow
 from app.services.personal_os.pattern_repository import InMemoryPatternRepository
 from app.services.personal_os.reasoning import GrowthRecommendation
@@ -91,14 +92,21 @@ def test_the_complete_flow_from_historical_evidence_to_measurement():
 
     experiment = flow.propose_experiment(
         with_recommendation,
+        organization_id=ORG_ID,
+        user_id=USER_ID,
         hypothesis_statement="A larger buffer will reduce postponement of learning activities.",
         adjustment="Add a 50% buffer to learning-category estimates.",
         measurement_plan="Re-run detection after 14 more days and compare postponement counts.",
+        metric="postponement_count",
+        category="learning",
+        baseline_window=EvidenceWindow(start=date(2026, 7, 1), end=date(2026, 7, 14)),
         started_on=date(2026, 7, 16),
         review_date=date(2026, 7, 30),
     )
     assert experiment.pattern_id == with_recommendation.pattern_id
     assert experiment.measurement_plan
+    assert experiment.baseline.value == 4
+    assert experiment.experiment_id != ""
 
 
 # --- surfacing (§11) -------------------------------------------------------------------------------
@@ -257,9 +265,14 @@ def test_experiment_requires_a_confirmed_pattern_with_a_recommendation():
     with pytest.raises(ValueError):
         flow.propose_experiment(
             confirmed,  # no recommendation attached yet
+            organization_id=ORG_ID,
+            user_id=USER_ID,
             hypothesis_statement="x",
             adjustment="y",
             measurement_plan="z",
+            metric="postponement_count",
+            category="learning",
+            baseline_window=EvidenceWindow(start=date(2026, 7, 1), end=date(2026, 7, 14)),
             started_on=date(2026, 7, 16),
         )
 
@@ -272,9 +285,14 @@ def test_experiment_can_be_created_from_a_recommendation():
     with_recommendation = flow.attach_recommendation(organization_id=ORG_ID, user_id=USER_ID, pattern=confirmed, recommendation=recommendation)
     experiment = flow.propose_experiment(
         with_recommendation,
+        organization_id=ORG_ID,
+        user_id=USER_ID,
         hypothesis_statement="A buffer reduces postponement.",
         adjustment="Add a buffer.",
         measurement_plan="Remeasure in 14 days.",
+        metric="postponement_count",
+        category="learning",
+        baseline_window=EvidenceWindow(start=date(2026, 7, 1), end=date(2026, 7, 14)),
         started_on=date(2026, 7, 16),
     )
     assert experiment.pattern_id == with_recommendation.pattern_id

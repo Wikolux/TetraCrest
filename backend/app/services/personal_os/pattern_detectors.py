@@ -46,6 +46,16 @@ class PatternDetectionConfig:
     high_confidence_min_observations: int = 6
     medium_confidence_min_observations: int = 4
     estimation_ratio_notable_threshold: float = 1.5
+    # P4's own experiment_measurement.py reuses this same config object
+    # (§10: "reuse existing Confidence where appropriate") rather than
+    # inventing a second config class - a relative change below this
+    # threshold classifies as UNCHANGED, not IMPROVED/WORSENED. 0.20 is
+    # the same order of magnitude as estimation_ratio_notable_threshold
+    # above (a 1.5x ratio is a 50% relative change) but deliberately
+    # lower, since "notable" for a percentage-point-scale comparison
+    # (postponement counts, completion rates) is a smaller bar than
+    # "notable" for a multiplicative time-estimate ratio.
+    change_notable_threshold: float = 0.20
 
 
 def calculate_confidence(observation_count: int, config: PatternDetectionConfig) -> Confidence:

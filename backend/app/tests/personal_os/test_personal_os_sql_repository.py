@@ -8,11 +8,25 @@ from datetime import date
 
 from app.services.personal_os.daily_intent import DailyIntent, IntentField, PlannedActivity
 from app.services.personal_os.evening import EveningReflection
+from app.services.personal_os.experiment import Experiment, ExperimentBaseline
 from app.services.personal_os.pattern import Pattern, PatternEvidenceItem
 from app.services.personal_os.reasoning import GrowthRecommendation, Hypothesis, InferredPattern, ObservedFact, UserExplanation
 from app.services.personal_os.reconciliation import ReconciliationEvidence, reconcile
-from app.services.personal_os.shared.types import Confidence, DayType, IntentSource, PatternStatus, PatternType
-from app.services.personal_os.sql_repository import SqlDailyIntentRepository, SqlEveningReflectionRepository, SqlPatternRepository
+from app.services.personal_os.shared.types import (
+    Confidence,
+    DayType,
+    ExperimentStatus,
+    ExperimentUserDecision,
+    IntentSource,
+    PatternStatus,
+    PatternType,
+)
+from app.services.personal_os.sql_repository import (
+    SqlDailyIntentRepository,
+    SqlEveningReflectionRepository,
+    SqlExperimentRepository,
+    SqlPatternRepository,
+)
 
 
 def _intent(intent_date=date(2026, 8, 13), stated_intention="Work day", day_type=DayType.WORK, **kwargs):
@@ -279,3 +293,133 @@ def test_list_active_excludes_dismissed_and_superseded(db_session):
     active = repo.list_active(organization_id=1, user_id=2)
     assert len(active) == 1
     assert active[0].pattern_type == PatternType.REPEATED_POSTPONEMENT
+
+
+# --- Experiment (P4 §16): durable persistence of the full lifecycle -------------------------------
+
+
+def _experiment(experiment_id="", status=ExperimentStatus.PROPOSED, review_date=date(2026, 7, 30)):
+    baseline = ExperimentBaseline(
+        metric="postponement_count", category="learning", period_start=date(2026, 7, 1), period_end=date(2026, 7, 14), value=4.0, observation_count=4
+    )
+    return Experiment(
+        experiment_id=experiment_id,
+        pattern_id="pattern-1",
+        hypothesis_statement="Estimates for this category may be optimistic.",
+        adjustment="Add a 50% buffer to learning-category estimates.",
+        measurement_plan="Compare postponement counts against baseline over 14 days.",
+        baseline=baseline,
+        started_on=date(2026, 7, 16),
+        review_date=review_date,
+        status=status,
+    )
+
+
+def test_experiment_round_trips_baseline_and_identity(db_session):
+    repo = SqlExperimentRepository(db_session)
+    saved = repo.save(_experiment(), organization_id=1, user_id=2)
+    db_session.expire_all()
+
+    fetched = repo.get_latest(organization_id=1, user_id=2, experiment_id=saved.experiment_id)
+    assert fetched.experiment_id == saved.experiment_id
+    assert fetched.pattern_id == "pattern-1"
+    assert fetched.baseline.value == 4.0
+    assert fetched.baseline.observation_count == 4
+    assert fetched.baseline.period_start == date(2026, 7, 1)
+    assert fetched.status == ExperimentStatus.PROPOSED
+
+
+def test_experiment_survives_a_fresh_session_not_just_the_same_one(db_engine):
+    from sqlalchemy.orm import sessionmaker
+
+    SessionLocal = sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
+
+    session1 = SessionLocal()
+    saved = SqlExperimentRepository(session1).save(_experiment(), organization_id=1, user_id=2)
+    session1.commit()
+    session1.close()
+
+    session2 = SessionLocal()
+    fetched = SqlExperimentRepository(session2).get_latest(organization_id=1, user_id=2, experiment_id=saved.experiment_id)
+    assert fetched is not None
+    assert fetched.baseline.value == 4.0
+    session2.close()
+
+
+def test_experiment_lifecycle_transitions_create_new_versions_never_overwritten(db_session):
+    from dataclasses import replace
+
+    repo = SqlExperimentRepository(db_session)
+    proposed = repo.save(_experiment(status=ExperimentStatus.PROPOSED), organization_id=1, user_id=2)
+    approved = repo.save(replace(proposed, status=ExperimentStatus.APPROVED), organization_id=1, user_id=2)
+    repo.save(replace(approved, status=ExperimentStatus.ACTIVE, started_on=date(2026, 7, 16)), organization_id=1, user_id=2)
+
+    history = repo.get_history(organization_id=1, user_id=2, experiment_id=proposed.experiment_id)
+    assert [h.status for h in history] == [ExperimentStatus.PROPOSED, ExperimentStatus.APPROVED, ExperimentStatus.ACTIVE]
+
+    latest = repo.get_latest(organization_id=1, user_id=2, experiment_id=proposed.experiment_id)
+    assert latest.status == ExperimentStatus.ACTIVE
+
+
+def test_experiment_comparison_and_decision_round_trip(db_session):
+    from dataclasses import replace
+
+    from app.services.personal_os.experiment import ExperimentComparison, ExperimentMeasurement
+    from app.services.personal_os.shared.types import ExperimentOutcome
+
+    repo = SqlExperimentRepository(db_session)
+    proposed = repo.save(_experiment(), organization_id=1, user_id=2)
+
+    measurement = ExperimentMeasurement(
+        metric="postponement_count", category="learning", period_start=date(2026, 7, 16), period_end=date(2026, 7, 30), value=1.0, observation_count=1
+    )
+    comparison = ExperimentComparison(
+        baseline=proposed.baseline,
+        measurement=measurement,
+        absolute_change=-3.0,
+        relative_change=-0.75,
+        outcome=ExperimentOutcome.IMPROVED,
+        confidence=Confidence.MEDIUM,
+        observation_statement="Postponements decreased by 75% during the experiment period (4 to 1).",
+    )
+    reviewed = repo.save(
+        replace(proposed, status=ExperimentStatus.REVIEWED, comparison=comparison, review_narrative="Postponements fell noticeably."),
+        organization_id=1,
+        user_id=2,
+    )
+    kept = repo.save(
+        replace(reviewed, status=ExperimentStatus.KEPT, decision=ExperimentUserDecision.KEEP, decision_reason="Clear improvement."),
+        organization_id=1,
+        user_id=2,
+    )
+    db_session.expire_all()
+
+    fetched = repo.get_latest(organization_id=1, user_id=2, experiment_id=kept.experiment_id)
+    assert fetched.status == ExperimentStatus.KEPT
+    assert fetched.comparison.outcome == ExperimentOutcome.IMPROVED
+    assert fetched.comparison.relative_change == -0.75
+    assert fetched.comparison.measurement.value == 1.0
+    assert fetched.decision == ExperimentUserDecision.KEEP
+    assert fetched.decision_reason == "Clear improvement."
+
+
+def test_experiment_list_ready_for_review(db_session):
+    repo = SqlExperimentRepository(db_session)
+    repo.save(_experiment(status=ExperimentStatus.ACTIVE, review_date=date(2026, 7, 30)), organization_id=1, user_id=2)
+
+    not_yet = repo.list_ready_for_review(organization_id=1, user_id=2, today=date(2026, 7, 20))
+    assert not_yet == ()
+
+    ready = repo.list_ready_for_review(organization_id=1, user_id=2, today=date(2026, 7, 30))
+    assert len(ready) == 1
+
+
+def test_experiment_list_active_excludes_terminal_statuses(db_session):
+    repo = SqlExperimentRepository(db_session)
+    repo.save(_experiment(status=ExperimentStatus.ACTIVE), organization_id=1, user_id=2)
+    repo.save(_experiment(status=ExperimentStatus.KEPT), organization_id=1, user_id=2)
+    repo.save(_experiment(status=ExperimentStatus.STOPPED), organization_id=1, user_id=2)
+
+    active = repo.list_active(organization_id=1, user_id=2)
+    assert len(active) == 1
+    assert active[0].status == ExperimentStatus.ACTIVE

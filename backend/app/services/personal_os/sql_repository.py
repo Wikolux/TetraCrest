@@ -23,18 +23,32 @@ from sqlalchemy.orm import Session
 
 from app.models.daily_intent_record import DailyIntentRecord
 from app.models.evening_reflection_record import EveningReflectionRecord
+from app.models.experiment_record import ExperimentRecord
 from app.models.pattern_record import PatternRecord
 from app.repositories.daily_intent_record_repository import DailyIntentRecordRepository
 from app.repositories.evening_reflection_record_repository import EveningReflectionRecordRepository
+from app.repositories.experiment_record_repository import ExperimentRecordRepository
 from app.repositories.pattern_record_repository import PatternRecordRepository
 from app.services.personal_os.daily_intent import DailyIntent, IntentField, PlannedActivity
 from app.services.personal_os.evening import EveningReflection, EveningReflectionRepository
+from app.services.personal_os.experiment import Experiment, ExperimentBaseline, ExperimentComparison, ExperimentMeasurement
+from app.services.personal_os.experiment_repository import ACTIVE_EXPERIMENT_STATUSES, ExperimentRepository
 from app.services.personal_os.pattern import Pattern, PatternEvidenceItem
 from app.services.personal_os.pattern_repository import PatternRepository
 from app.services.personal_os.reasoning import GrowthRecommendation, Hypothesis, InferredPattern, ObservedFact
 from app.services.personal_os.reconciliation import ReconciliationEvidence, ReconciliationRecord
 from app.services.personal_os.repository import DailyIntentRepository
-from app.services.personal_os.shared.types import Confidence, DayType, IntentSource, PatternStatus, PatternType, ReconciliationStatus
+from app.services.personal_os.shared.types import (
+    Confidence,
+    DayType,
+    ExperimentOutcome,
+    ExperimentStatus,
+    ExperimentUserDecision,
+    IntentSource,
+    PatternStatus,
+    PatternType,
+    ReconciliationStatus,
+)
 
 
 def _intent_fields_to_json(fields: tuple[IntentField, ...]) -> str:
@@ -402,6 +416,172 @@ class SqlPatternRepository(PatternRepository):
             recommendation=_recommendation_from_json(record.recommendation_json),
             status=PatternStatus(record.status),
             supersedes_pattern_id=record.supersedes_pattern_id,
+            created_at=created_at,
+            updated_at=updated_at,
+        )
+
+
+# --- Experiment (P4) --------------------------------------------------------------------------
+
+
+def _baseline_to_dict(baseline: ExperimentBaseline) -> dict:
+    return {
+        "metric": baseline.metric,
+        "category": baseline.category,
+        "period_start": baseline.period_start.isoformat(),
+        "period_end": baseline.period_end.isoformat(),
+        "value": baseline.value,
+        "observation_count": baseline.observation_count,
+    }
+
+
+def _baseline_from_dict(row: dict) -> ExperimentBaseline:
+    return ExperimentBaseline(
+        metric=row["metric"],
+        category=row["category"],
+        period_start=date.fromisoformat(row["period_start"]),
+        period_end=date.fromisoformat(row["period_end"]),
+        value=row["value"],
+        observation_count=row["observation_count"],
+    )
+
+
+def _measurement_to_dict(measurement: ExperimentMeasurement) -> dict:
+    return {
+        "metric": measurement.metric,
+        "category": measurement.category,
+        "period_start": measurement.period_start.isoformat(),
+        "period_end": measurement.period_end.isoformat(),
+        "value": measurement.value,
+        "observation_count": measurement.observation_count,
+    }
+
+
+def _measurement_from_dict(row: dict) -> ExperimentMeasurement:
+    return ExperimentMeasurement(
+        metric=row["metric"],
+        category=row["category"],
+        period_start=date.fromisoformat(row["period_start"]),
+        period_end=date.fromisoformat(row["period_end"]),
+        value=row["value"],
+        observation_count=row["observation_count"],
+    )
+
+
+def _comparison_to_json(comparison: ExperimentComparison | None) -> str | None:
+    if comparison is None:
+        return None
+    return json.dumps(
+        {
+            "baseline": _baseline_to_dict(comparison.baseline),
+            "measurement": _measurement_to_dict(comparison.measurement),
+            "absolute_change": comparison.absolute_change,
+            "relative_change": comparison.relative_change,
+            "outcome": comparison.outcome.value,
+            "confidence": comparison.confidence.value,
+            "observation_statement": comparison.observation_statement,
+        }
+    )
+
+
+def _comparison_from_json(raw: str | None) -> ExperimentComparison | None:
+    if raw is None:
+        return None
+    row = json.loads(raw)
+    return ExperimentComparison(
+        baseline=_baseline_from_dict(row["baseline"]),
+        measurement=_measurement_from_dict(row["measurement"]),
+        absolute_change=row["absolute_change"],
+        relative_change=row.get("relative_change"),
+        outcome=ExperimentOutcome(row["outcome"]),
+        confidence=Confidence(row["confidence"]),
+        observation_statement=row["observation_statement"],
+    )
+
+
+class SqlExperimentRepository(ExperimentRepository):
+    """Mirrors SqlPatternRepository's own shape, with one deliberate
+    difference: Pattern's SQL backend derives `pattern_id` from the row's
+    own auto-increment id (there is only ever one active Pattern per
+    type, so "latest row of this type" is enough); an Experiment has no
+    such small, fixed grouping key - a user may have many concurrent or
+    historical experiments - so `experiment_id` here is a real, stable
+    value (generated once, at the first save) stored in its own indexed
+    column and reused across every later lifecycle version, exactly the
+    identity InMemoryExperimentRepository already assigns via its own
+    counter."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self._records = ExperimentRecordRepository(db)
+
+    def save(self, experiment: Experiment, *, organization_id: int, user_id: int) -> Experiment:
+        from uuid import uuid4
+
+        experiment_id = experiment.experiment_id or str(uuid4())
+        record = ExperimentRecord(
+            organization_id=organization_id,
+            user_id=user_id,
+            experiment_id=experiment_id,
+            pattern_id=experiment.pattern_id,
+            hypothesis_statement=experiment.hypothesis_statement,
+            adjustment=experiment.adjustment,
+            measurement_plan=experiment.measurement_plan,
+            baseline_json=json.dumps(_baseline_to_dict(experiment.baseline)),
+            started_on=experiment.started_on,
+            review_date=experiment.review_date,
+            status=experiment.status.value,
+            comparison_json=_comparison_to_json(experiment.comparison),
+            review_narrative=experiment.review_narrative,
+            decision=experiment.decision.value if experiment.decision else None,
+            decision_reason=experiment.decision_reason,
+            review_outcome=experiment.review_outcome,
+        )
+        self._records.create(record)
+        return self._to_domain(record)
+
+    def get_latest(self, *, organization_id: int, user_id: int, experiment_id: str) -> Experiment | None:
+        record = self._records.get_latest_by_experiment_id(organization_id, user_id, experiment_id)
+        return self._to_domain(record) if record else None
+
+    def get_history(self, *, organization_id: int, user_id: int, experiment_id: str) -> tuple[Experiment, ...]:
+        records = self._records.list_history(organization_id, user_id, experiment_id)
+        return tuple(self._to_domain(record) for record in records)
+
+    def list_active(self, *, organization_id: int, user_id: int) -> tuple[Experiment, ...]:
+        records = self._records.list_latest_per_experiment(organization_id, user_id)
+        experiments = [self._to_domain(record) for record in records]
+        active = [e for e in experiments if e.status in ACTIVE_EXPERIMENT_STATUSES]
+        return tuple(sorted(active, key=lambda e: e.created_at))
+
+    def list_ready_for_review(self, *, organization_id: int, user_id: int, today) -> tuple[Experiment, ...]:
+        ready = []
+        for experiment in self.list_active(organization_id=organization_id, user_id=user_id):
+            if experiment.status == ExperimentStatus.READY_FOR_REVIEW:
+                ready.append(experiment)
+            elif experiment.status == ExperimentStatus.ACTIVE and experiment.review_date is not None and experiment.review_date <= today:
+                ready.append(experiment)
+        return tuple(sorted(ready, key=lambda e: e.review_date or e.created_at.date()))
+
+    @staticmethod
+    def _to_domain(record: ExperimentRecord) -> Experiment:
+        created_at = record.created_at if isinstance(record.created_at, datetime) else datetime.fromisoformat(str(record.created_at))
+        updated_at = record.updated_at if isinstance(record.updated_at, datetime) else datetime.fromisoformat(str(record.updated_at))
+        return Experiment(
+            experiment_id=record.experiment_id,
+            pattern_id=record.pattern_id,
+            hypothesis_statement=record.hypothesis_statement,
+            adjustment=record.adjustment,
+            measurement_plan=record.measurement_plan,
+            baseline=_baseline_from_dict(json.loads(record.baseline_json)),
+            started_on=record.started_on,
+            review_date=record.review_date,
+            status=ExperimentStatus(record.status),
+            comparison=_comparison_from_json(record.comparison_json),
+            review_narrative=record.review_narrative,
+            decision=ExperimentUserDecision(record.decision) if record.decision else None,
+            decision_reason=record.decision_reason,
+            review_outcome=record.review_outcome,
             created_at=created_at,
             updated_at=updated_at,
         )

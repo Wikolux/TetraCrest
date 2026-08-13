@@ -34,7 +34,10 @@ from app.services.ai.shared.execution_context import SharedExecutionContext
 from app.services.context.types import ContextItem, ContextPackage, ContextSection
 from app.services.prompt_builder.builder import PromptBuilder
 from app.services.personal_os.evening import EveningReflectionRepository
-from app.services.personal_os.pattern import Experiment, GrowthRecommendation, Pattern
+from app.services.personal_os.experiment import Experiment
+from app.services.personal_os.experiment_measurement import build_baseline
+from app.services.personal_os.experiment_repository import ExperimentRepository, InMemoryExperimentRepository
+from app.services.personal_os.pattern import GrowthRecommendation, Pattern
 from app.services.personal_os.pattern_detectors import PatternDetectionConfig, detect_all
 from app.services.personal_os.pattern_evidence import EvidenceWindow, HistoricalEvidenceReader
 from app.services.personal_os.pattern_repository import PatternRepository
@@ -66,12 +69,17 @@ class PatternDetectionFlow:
         runtime_adapter: RuntimeAdapter | None = None,
         default_provider: ProviderName = ProviderName.OPENAI,
         config: PatternDetectionConfig | None = None,
+        experiment_repository: ExperimentRepository | None = None,
     ) -> None:
         self.evidence_reader = HistoricalEvidenceReader(intent_repository, evening_repository)
         self.pattern_repository = pattern_repository
         self.runtime_adapter = runtime_adapter or RuntimeAdapter()
         self.default_provider = default_provider
         self.config = config or PatternDetectionConfig()
+        # P4: optional, defaulted like every other collaborator here, so
+        # every P3 caller/test that never mentioned experiments keeps
+        # working unchanged.
+        self.experiment_repository = experiment_repository or InMemoryExperimentRepository()
 
     def detect(self, *, organization_id: int, user_id: int, today: date) -> tuple[Pattern, ...]:
         """Historical evidence -> pattern detection (§1's first two
@@ -161,29 +169,59 @@ class PatternDetectionFlow:
         updated = _with_recommendation(pattern, recommendation)
         return self.pattern_repository.save(updated, organization_id=organization_id, user_id=user_id)
 
-    @staticmethod
     def propose_experiment(
-        pattern: Pattern, *, hypothesis_statement: str, adjustment: str, measurement_plan: str, started_on: date, review_date: date | None = None
+        self,
+        pattern: Pattern,
+        *,
+        organization_id: int,
+        user_id: int,
+        hypothesis_statement: str,
+        adjustment: str,
+        measurement_plan: str,
+        metric: str,
+        category: str,
+        baseline_window: EvidenceWindow,
+        started_on: date,
+        review_date: date | None = None,
     ) -> Experiment:
-        """Experimental learning (§13) - always explicit, always
-        optional; nothing in this flow calls this automatically. Requires
-        a CONFIRMED pattern with an attached recommendation, since an
-        experiment without either would have nothing real to measure
-        against."""
+        """Experimental learning (P3 §13, extended P4 §5-§6) - always
+        explicit, always optional; nothing in this flow calls this
+        automatically. Requires a CONFIRMED pattern with an attached
+        recommendation, since an experiment without either would have
+        nothing real to measure against.
+
+        P4 extension: computes and persists a real ExperimentBaseline
+        from actual evidence over `baseline_window` (never fabricated -
+        raises if there is no evidence for `category` in that window,
+        per §5's own "never fabricate missing measurements") and saves
+        the result via `self.experiment_repository`, returning it with a
+        real experiment_id - unlike P3's own version of this method,
+        which only ever constructed an unpersisted value object."""
         if pattern.status != PatternStatus.CONFIRMED:
             raise ValueError("propose_experiment() requires a CONFIRMED pattern")
         if pattern.recommendation is None:
             raise ValueError("propose_experiment() requires a pattern with an attached recommendation")
-        return Experiment(
-            experiment_id=str(uuid4()),
+
+        evidence = self.evidence_reader.gather(organization_id=organization_id, user_id=user_id, window=baseline_window)
+        baseline = build_baseline(evidence, metric, category, baseline_window.start, baseline_window.end)
+        if baseline is None:
+            raise ValueError(
+                f"propose_experiment() found no evidence for category {category!r} in {baseline_window.start}..{baseline_window.end} "
+                "- a baseline cannot be fabricated (§5)"
+            )
+
+        experiment = Experiment(
+            experiment_id="",
             pattern_id=pattern.pattern_id,
             hypothesis_statement=hypothesis_statement,
             adjustment=adjustment,
             measurement_plan=measurement_plan,
+            baseline=baseline,
             started_on=started_on,
             review_date=review_date,
             status=ExperimentStatus.PROPOSED,
         )
+        return self.experiment_repository.save(experiment, organization_id=organization_id, user_id=user_id)
 
     def _narrate(self, pattern: Pattern, organization_id: int, conversation_id: int | None) -> str:
         """The one real Runtime integration point in this flow - mirrors

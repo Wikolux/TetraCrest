@@ -11,6 +11,7 @@ from app.models.conversation_message import ConversationMessage
 from app.models.daily_intent_record import DailyIntentRecord
 from app.models.evening_reflection_record import EveningReflectionRecord
 from app.models.pattern_record import PatternRecord
+from app.models.experiment_record import ExperimentRecord
 
 __all__ = [
     "Organization",
@@ -26,4 +27,5 @@ __all__ = [
     "DailyIntentRecord",
     "EveningReflectionRecord",
     "PatternRecord",
+    "ExperimentRecord",
 ]
