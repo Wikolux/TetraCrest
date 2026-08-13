@@ -47,6 +47,15 @@ _PERSONAL_OS_MODULES = (
     "app.services.personal_os.experiment_measurement",
     "app.services.personal_os.experiment_repository",
     "app.services.personal_os.experiment_flow",
+    "app.services.personal_os.life_domain",
+    "app.services.personal_os.life_domain_repository",
+    "app.services.personal_os.day_mode",
+    "app.services.personal_os.mission",
+    "app.services.personal_os.mission_repository",
+    "app.services.personal_os.autonomy",
+    "app.services.personal_os.priority",
+    "app.services.personal_os.candidate_sources",
+    "app.services.personal_os.priority_flow",
 )
 
 _FORBIDDEN_SPECIALIST_FRAGMENTS = (
@@ -130,6 +139,8 @@ def test_personal_os_mints_no_new_memory_framework_namespace():
         "app.services.personal_os.sql_repository",
         "app.services.personal_os.pattern_repository",
         "app.services.personal_os.experiment_repository",
+        "app.services.personal_os.life_domain_repository",
+        "app.services.personal_os.mission_repository",
     ):
         source = inspect.getsource(importlib.import_module(module_path))
         assert ".remember(" not in source, f"{module_path} calls .remember() - unexpected AgentMemory write"
@@ -190,6 +201,56 @@ def test_experiment_measurement_does_not_touch_the_runtime():
     assert not any("runtime_adapter" in name or "prompt_builder" in name for name in imported), (
         "experiment_measurement.py imports a Runtime/PromptBuilder seam - measurement must remain deterministic"
     )
+
+
+def test_priority_flow_only_reaches_the_runtime_through_runtime_adapter():
+    """P5 §27's own narration step (explaining an already-ranked,
+    already-explained item) must follow the same seam every other
+    Personal OS flow already uses."""
+    imported = _imported_modules("app.services.personal_os.priority_flow")
+    assert any(name == "app.services.ai.agents.specialists.runtime_adapter" for name in imported)
+    assert not any(name == "app.services.ai.runtime.runtime" for name in imported)
+
+
+def test_priority_engine_and_autonomy_and_candidate_sources_do_not_touch_the_runtime():
+    """P5 §27: 'Do not let an LLM secretly determine priority
+    mathematics.' priority.py's own scoring/ranking, autonomy.py's own
+    permission check, and candidate_sources.py's own record-to-candidate
+    transforms must all stay deterministic - none of the three may import
+    RuntimeAdapter/PromptBuilder at all."""
+    for module_path in (
+        "app.services.personal_os.priority",
+        "app.services.personal_os.autonomy",
+        "app.services.personal_os.candidate_sources",
+        "app.services.personal_os.day_mode",
+        "app.services.personal_os.life_domain",
+        "app.services.personal_os.mission",
+    ):
+        imported = _imported_modules(module_path)
+        assert not any("runtime_adapter" in name or "prompt_builder" in name for name in imported), (
+            f"{module_path} imports a Runtime/PromptBuilder seam - this module must remain deterministic"
+        )
+
+
+def test_autonomy_module_contains_no_execution_surface():
+    """P5 §24: no external integration exists yet, and autonomy.py must
+    never pretend one does - it is a permission check only. Verified
+    structurally: the module's own source never imports requests/httpx
+    or any external-API client, and defines no function whose name
+    implies it actually performs a consequential action."""
+    source = inspect.getsource(importlib.import_module("app.services.personal_os.autonomy"))
+    forbidden_fragments = ("requests.", "httpx.", "def reserve_flight", "def send_application", "def make_payment", "def post_to_linkedin")
+    for fragment in forbidden_fragments:
+        assert fragment not in source, f"autonomy.py contains {fragment!r} - it must remain a pure permission check"
+
+
+def test_no_duplicate_task_or_repository_mechanism_for_missions():
+    """P5 §2, §26: Mission must not become a second task-tracking system
+    - mission.py declares no dependency on, or reimplementation of, any
+    existing task/reconciliation concept."""
+    source = inspect.getsource(importlib.import_module("app.services.personal_os.mission"))
+    assert "class Task" not in source
+    assert "TaskRepository" not in source
 
 
 def test_personal_os_package_lives_outside_the_frozen_ai_operating_system():

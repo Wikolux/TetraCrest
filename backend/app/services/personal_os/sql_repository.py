@@ -24,27 +24,40 @@ from sqlalchemy.orm import Session
 from app.models.daily_intent_record import DailyIntentRecord
 from app.models.evening_reflection_record import EveningReflectionRecord
 from app.models.experiment_record import ExperimentRecord
+from app.models.life_domain_state_record import LifeDomainStateRecord
+from app.models.mission_record import MissionRecord
 from app.models.pattern_record import PatternRecord
 from app.repositories.daily_intent_record_repository import DailyIntentRecordRepository
 from app.repositories.evening_reflection_record_repository import EveningReflectionRecordRepository
 from app.repositories.experiment_record_repository import ExperimentRecordRepository
+from app.repositories.life_domain_state_record_repository import LifeDomainStateRecordRepository
+from app.repositories.mission_record_repository import MissionRecordRepository
 from app.repositories.pattern_record_repository import PatternRecordRepository
 from app.services.personal_os.daily_intent import DailyIntent, IntentField, PlannedActivity
 from app.services.personal_os.evening import EveningReflection, EveningReflectionRepository
 from app.services.personal_os.experiment import Experiment, ExperimentBaseline, ExperimentComparison, ExperimentMeasurement
 from app.services.personal_os.experiment_repository import ACTIVE_EXPERIMENT_STATUSES, ExperimentRepository
+from app.services.personal_os.life_domain import LifeDomainState
+from app.services.personal_os.life_domain_repository import LifeDomainStateRepository
+from app.services.personal_os.mission import AutonomyGrant, Mission
+from app.services.personal_os.mission_repository import ACTIVE_MISSION_STATUSES, MissionRepository
 from app.services.personal_os.pattern import Pattern, PatternEvidenceItem
 from app.services.personal_os.pattern_repository import PatternRepository
 from app.services.personal_os.reasoning import GrowthRecommendation, Hypothesis, InferredPattern, ObservedFact
 from app.services.personal_os.reconciliation import ReconciliationEvidence, ReconciliationRecord
 from app.services.personal_os.repository import DailyIntentRepository
 from app.services.personal_os.shared.types import (
+    AutonomyAction,
     Confidence,
     DayType,
     ExperimentOutcome,
     ExperimentStatus,
     ExperimentUserDecision,
     IntentSource,
+    LifeDomain,
+    LifeDomainClassification,
+    LifeDomainStatus,
+    MissionStatus,
     PatternStatus,
     PatternType,
     ReconciliationStatus,
@@ -582,6 +595,172 @@ class SqlExperimentRepository(ExperimentRepository):
             decision=ExperimentUserDecision(record.decision) if record.decision else None,
             decision_reason=record.decision_reason,
             review_outcome=record.review_outcome,
+            created_at=created_at,
+            updated_at=updated_at,
+        )
+
+
+# --- LifeDomainState (P5) ---------------------------------------------------------------------
+
+
+class SqlLifeDomainStateRepository(LifeDomainStateRepository):
+    """Mirrors SqlPatternRepository's own shape exactly - LifeDomainState
+    is keyed by LifeDomain the same way Pattern is keyed by PatternType
+    (one current state per domain), so state_id is likewise derived from
+    the row's own auto-increment id."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self._records = LifeDomainStateRecordRepository(db)
+
+    def save(self, state: LifeDomainState, *, organization_id: int, user_id: int) -> LifeDomainState:
+        record = LifeDomainStateRecord(
+            organization_id=organization_id,
+            user_id=user_id,
+            domain=state.domain.value,
+            status=state.status.value,
+            classification=state.classification.value,
+            objective=state.objective,
+            focus=state.focus,
+            context_notes=state.context_notes,
+            constraints_json=json.dumps(list(state.constraints)),
+            deadlines_json=json.dumps(list(state.deadlines)),
+            related_mission_ids_json=json.dumps(list(state.related_mission_ids)),
+            last_reviewed_at=state.last_reviewed_at,
+            supersedes_state_id=state.supersedes_state_id,
+        )
+        self._records.create(record)
+        return self._to_domain(record)
+
+    def get_latest(self, *, organization_id: int, user_id: int, domain: LifeDomain) -> LifeDomainState | None:
+        record = self._records.get_latest_by_domain(organization_id, user_id, domain.value)
+        return self._to_domain(record) if record else None
+
+    def get_history(self, *, organization_id: int, user_id: int, domain: LifeDomain) -> tuple[LifeDomainState, ...]:
+        records = self._records.list_history(organization_id, user_id, domain.value)
+        return tuple(self._to_domain(record) for record in records)
+
+    def list_all_latest(self, *, organization_id: int, user_id: int) -> tuple[LifeDomainState, ...]:
+        records = self._records.list_latest_per_domain(organization_id, user_id)
+        states = [self._to_domain(record) for record in records]
+        return tuple(sorted(states, key=lambda s: s.domain.value))
+
+    @staticmethod
+    def _to_domain(record: LifeDomainStateRecord) -> LifeDomainState:
+        last_reviewed_at = record.last_reviewed_at if isinstance(record.last_reviewed_at, datetime) else datetime.fromisoformat(str(record.last_reviewed_at))
+        created_at = record.created_at if isinstance(record.created_at, datetime) else datetime.fromisoformat(str(record.created_at))
+        updated_at = record.updated_at if isinstance(record.updated_at, datetime) else datetime.fromisoformat(str(record.updated_at))
+        return LifeDomainState(
+            domain=LifeDomain(record.domain),
+            status=LifeDomainStatus(record.status),
+            classification=LifeDomainClassification(record.classification),
+            objective=record.objective,
+            focus=record.focus,
+            context_notes=record.context_notes,
+            constraints=tuple(json.loads(record.constraints_json)),
+            deadlines=tuple(json.loads(record.deadlines_json)),
+            related_mission_ids=tuple(json.loads(record.related_mission_ids_json)),
+            last_reviewed_at=last_reviewed_at,
+            supersedes_state_id=record.supersedes_state_id,
+            created_at=created_at,
+            updated_at=updated_at,
+            state_id=str(record.id),
+        )
+
+
+# --- Mission (P5) --------------------------------------------------------------------------------
+
+
+def _autonomy_grant_to_dict(grant: AutonomyGrant) -> dict:
+    return {
+        "action": grant.action.value,
+        "scope": grant.scope,
+        "granted_at": grant.granted_at.isoformat(),
+        "expires_at": grant.expires_at.isoformat() if grant.expires_at else None,
+        "conditions": list(grant.conditions),
+        "revoked": grant.revoked,
+        "revoked_at": grant.revoked_at.isoformat() if grant.revoked_at else None,
+    }
+
+
+def _autonomy_grant_from_dict(row: dict) -> AutonomyGrant:
+    return AutonomyGrant(
+        action=AutonomyAction(row["action"]),
+        scope=row["scope"],
+        granted_at=datetime.fromisoformat(row["granted_at"]),
+        expires_at=datetime.fromisoformat(row["expires_at"]) if row.get("expires_at") else None,
+        conditions=tuple(row.get("conditions", [])),
+        revoked=row.get("revoked", False),
+        revoked_at=datetime.fromisoformat(row["revoked_at"]) if row.get("revoked_at") else None,
+    )
+
+
+class SqlMissionRepository(MissionRepository):
+    """Mirrors SqlExperimentRepository's own shape exactly - a real,
+    stable mission_id (generated once, at the first save) stored in its
+    own indexed column and reused across every later lifecycle version,
+    since a user may have many concurrent or historical missions."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self._records = MissionRecordRepository(db)
+
+    def save(self, mission: Mission, *, organization_id: int, user_id: int) -> Mission:
+        from uuid import uuid4
+
+        mission_id = mission.mission_id or str(uuid4())
+        record = MissionRecord(
+            organization_id=organization_id,
+            user_id=user_id,
+            mission_id=mission_id,
+            objective=mission.objective,
+            status=mission.status.value,
+            domain=mission.domain.value if mission.domain else None,
+            target_date=mission.target_date,
+            budget=mission.budget,
+            constraints_json=json.dumps(list(mission.constraints)),
+            preferences_json=json.dumps(list(mission.preferences)),
+            related_commitment_ids_json=json.dumps(list(mission.related_commitment_ids)),
+            autonomy_grants_json=json.dumps([_autonomy_grant_to_dict(g) for g in mission.autonomy_grants]),
+            notes=mission.notes,
+            next_step=mission.next_step,
+            supersedes_mission_id=mission.supersedes_mission_id,
+        )
+        self._records.create(record)
+        return self._to_domain(record)
+
+    def get_latest(self, *, organization_id: int, user_id: int, mission_id: str) -> Mission | None:
+        record = self._records.get_latest_by_mission_id(organization_id, user_id, mission_id)
+        return self._to_domain(record) if record else None
+
+    def get_history(self, *, organization_id: int, user_id: int, mission_id: str) -> tuple[Mission, ...]:
+        records = self._records.list_history(organization_id, user_id, mission_id)
+        return tuple(self._to_domain(record) for record in records)
+
+    def list_active(self, *, organization_id: int, user_id: int) -> tuple[Mission, ...]:
+        records = self._records.list_latest_per_mission(organization_id, user_id)
+        missions = [self._to_domain(record) for record in records]
+        active = [m for m in missions if m.status in ACTIVE_MISSION_STATUSES]
+        return tuple(sorted(active, key=lambda m: m.created_at))
+
+    @staticmethod
+    def _to_domain(record: MissionRecord) -> Mission:
+        created_at = record.created_at if isinstance(record.created_at, datetime) else datetime.fromisoformat(str(record.created_at))
+        updated_at = record.updated_at if isinstance(record.updated_at, datetime) else datetime.fromisoformat(str(record.updated_at))
+        return Mission(
+            mission_id=record.mission_id,
+            objective=record.objective,
+            status=MissionStatus(record.status),
+            domain=LifeDomain(record.domain) if record.domain else None,
+            target_date=record.target_date,
+            budget=record.budget,
+            constraints=tuple(json.loads(record.constraints_json)),
+            preferences=tuple(json.loads(record.preferences_json)),
+            related_commitment_ids=tuple(json.loads(record.related_commitment_ids_json)),
+            autonomy_grants=tuple(_autonomy_grant_from_dict(row) for row in json.loads(record.autonomy_grants_json)),
+            notes=record.notes,
+            next_step=record.next_step,
+            supersedes_mission_id=record.supersedes_mission_id,
             created_at=created_at,
             updated_at=updated_at,
         )

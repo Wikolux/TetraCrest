@@ -9,15 +9,21 @@ from datetime import date
 from app.services.personal_os.daily_intent import DailyIntent, IntentField, PlannedActivity
 from app.services.personal_os.evening import EveningReflection
 from app.services.personal_os.experiment import Experiment, ExperimentBaseline
+from app.services.personal_os.life_domain import default_state
+from app.services.personal_os.mission import AutonomyGrant, Mission
 from app.services.personal_os.pattern import Pattern, PatternEvidenceItem
 from app.services.personal_os.reasoning import GrowthRecommendation, Hypothesis, InferredPattern, ObservedFact, UserExplanation
 from app.services.personal_os.reconciliation import ReconciliationEvidence, reconcile
 from app.services.personal_os.shared.types import (
+    AutonomyAction,
     Confidence,
     DayType,
     ExperimentStatus,
     ExperimentUserDecision,
     IntentSource,
+    LifeDomain,
+    LifeDomainStatus,
+    MissionStatus,
     PatternStatus,
     PatternType,
 )
@@ -25,6 +31,8 @@ from app.services.personal_os.sql_repository import (
     SqlDailyIntentRepository,
     SqlEveningReflectionRepository,
     SqlExperimentRepository,
+    SqlLifeDomainStateRepository,
+    SqlMissionRepository,
     SqlPatternRepository,
 )
 
@@ -423,3 +431,126 @@ def test_experiment_list_active_excludes_terminal_statuses(db_session):
     active = repo.list_active(organization_id=1, user_id=2)
     assert len(active) == 1
     assert active[0].status == ExperimentStatus.ACTIVE
+
+
+# --- LifeDomainState (P5 §6): durable persistence of domain activation history --------------------
+
+
+def test_life_domain_state_round_trips(db_session):
+    from dataclasses import replace
+
+    repo = SqlLifeDomainStateRepository(db_session)
+    state = replace(default_state(LifeDomain.CAREER), status=LifeDomainStatus.ACTIVE, objective="Find a PM role")
+    saved = repo.save(state, organization_id=1, user_id=2)
+    db_session.expire_all()
+
+    fetched = repo.get_latest(organization_id=1, user_id=2, domain=LifeDomain.CAREER)
+    assert fetched.status == LifeDomainStatus.ACTIVE
+    assert fetched.objective == "Find a PM role"
+    assert fetched.state_id == saved.state_id
+
+
+def test_life_domain_state_survives_a_fresh_session(db_engine):
+    from dataclasses import replace
+
+    from sqlalchemy.orm import sessionmaker
+
+    SessionLocal = sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
+    session1 = SessionLocal()
+    SqlLifeDomainStateRepository(session1).save(replace(default_state(LifeDomain.STUDY), status=LifeDomainStatus.ACTIVE), organization_id=1, user_id=2)
+    session1.commit()
+    session1.close()
+
+    session2 = SessionLocal()
+    fetched = SqlLifeDomainStateRepository(session2).get_latest(organization_id=1, user_id=2, domain=LifeDomain.STUDY)
+    assert fetched is not None
+    assert fetched.status == LifeDomainStatus.ACTIVE
+    session2.close()
+
+
+def test_life_domain_state_transitions_preserve_history(db_session):
+    from dataclasses import replace
+
+    repo = SqlLifeDomainStateRepository(db_session)
+    active = repo.save(replace(default_state(LifeDomain.CAREER), status=LifeDomainStatus.ACTIVE), organization_id=1, user_id=2)
+    repo.save(replace(active, status=LifeDomainStatus.PAUSED), organization_id=1, user_id=2)
+
+    history = repo.get_history(organization_id=1, user_id=2, domain=LifeDomain.CAREER)
+    assert [h.status for h in history] == [LifeDomainStatus.ACTIVE, LifeDomainStatus.PAUSED]
+
+
+def test_life_domain_state_list_all_latest(db_session):
+    from dataclasses import replace
+
+    repo = SqlLifeDomainStateRepository(db_session)
+    repo.save(replace(default_state(LifeDomain.CAREER), status=LifeDomainStatus.ACTIVE), organization_id=1, user_id=2)
+    repo.save(replace(default_state(LifeDomain.BUSINESS), status=LifeDomainStatus.ACTIVE), organization_id=1, user_id=2)
+
+    latest = repo.list_all_latest(organization_id=1, user_id=2)
+    assert {s.domain for s in latest} == {LifeDomain.CAREER, LifeDomain.BUSINESS}
+
+
+# --- Mission (P5 §15): durable persistence including nested AutonomyGrants ------------------------
+
+
+def _mission_with_grant(status=MissionStatus.DRAFT):
+    grant = AutonomyGrant(action=AutonomyAction.RESEARCH, scope="Destination and flight research")
+    return Mission(
+        mission_id="", objective="Plan a surprise vacation for my wife", status=status,
+        domain=LifeDomain.FAMILY, budget="₦500,000", constraints=("dates: 10-20 Dec",), preferences=("beach", "surprise"),
+        autonomy_grants=(grant,), next_step="Research beach destinations",
+    )
+
+
+def test_mission_round_trips_including_autonomy_grants(db_session):
+    repo = SqlMissionRepository(db_session)
+    saved = repo.save(_mission_with_grant(), organization_id=1, user_id=2)
+    db_session.expire_all()
+
+    fetched = repo.get_latest(organization_id=1, user_id=2, mission_id=saved.mission_id)
+    assert fetched.objective == "Plan a surprise vacation for my wife"
+    assert fetched.budget == "₦500,000"
+    assert fetched.constraints == ("dates: 10-20 Dec",)
+    assert fetched.preferences == ("beach", "surprise")
+    assert len(fetched.autonomy_grants) == 1
+    assert fetched.autonomy_grants[0].scope == "Destination and flight research"
+    assert fetched.autonomy_grants[0].action == AutonomyAction.RESEARCH
+
+
+def test_mission_survives_a_fresh_session(db_engine):
+    from sqlalchemy.orm import sessionmaker
+
+    SessionLocal = sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
+    session1 = SessionLocal()
+    saved = SqlMissionRepository(session1).save(_mission_with_grant(), organization_id=1, user_id=2)
+    session1.commit()
+    session1.close()
+
+    session2 = SessionLocal()
+    fetched = SqlMissionRepository(session2).get_latest(organization_id=1, user_id=2, mission_id=saved.mission_id)
+    assert fetched is not None
+    assert fetched.objective == "Plan a surprise vacation for my wife"
+    session2.close()
+
+
+def test_mission_lifecycle_transitions_preserve_history(db_session):
+    from dataclasses import replace
+
+    repo = SqlMissionRepository(db_session)
+    draft = repo.save(_mission_with_grant(status=MissionStatus.DRAFT), organization_id=1, user_id=2)
+    active = repo.save(replace(draft, status=MissionStatus.ACTIVE), organization_id=1, user_id=2)
+    repo.save(replace(active, status=MissionStatus.COMPLETED), organization_id=1, user_id=2)
+
+    history = repo.get_history(organization_id=1, user_id=2, mission_id=draft.mission_id)
+    assert [h.status for h in history] == [MissionStatus.DRAFT, MissionStatus.ACTIVE, MissionStatus.COMPLETED]
+
+
+def test_mission_list_active_excludes_completed_and_cancelled(db_session):
+    repo = SqlMissionRepository(db_session)
+    repo.save(_mission_with_grant(status=MissionStatus.ACTIVE), organization_id=1, user_id=2)
+    repo.save(_mission_with_grant(status=MissionStatus.COMPLETED), organization_id=1, user_id=2)
+    repo.save(_mission_with_grant(status=MissionStatus.CANCELLED), organization_id=1, user_id=2)
+
+    active = repo.list_active(organization_id=1, user_id=2)
+    assert len(active) == 1
+    assert active[0].status == MissionStatus.ACTIVE

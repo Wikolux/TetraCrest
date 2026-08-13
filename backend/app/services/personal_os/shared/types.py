@@ -207,3 +207,124 @@ class ExperimentUserDecision(StrEnum):
     STOP = "stop"
     CONTINUE = "continue"
     DEFER = "defer"
+
+
+class LifeDomain(StrEnum):
+    """The ten named areas of the user's life Personal State tracks (P5
+    §3) - a closed-but-growable enum, the same discipline PatternType
+    already established: adding an eleventh domain is a new member here,
+    never a magic string threaded through the rest of the package.
+
+    This is a DIFFERENT concept from BriefDomain (brief.py) - BriefDomain
+    names thirteen *report sections* an Intelligence Brief renders
+    through; LifeDomain names areas of the user's actual life that carry
+    their own activation state (LifeDomainStatus) and history. The two
+    enums share no members and are never substituted for one another."""
+
+    CAREER = "career"
+    STUDY = "study"
+    TECHNICAL_PROJECTS = "technical_projects"
+    BUSINESS = "business"
+    FINANCE_INVESTMENTS = "finance_investments"
+    PERSONAL_BRAND = "personal_brand"
+    FAMILY = "family"
+    LONG_TERM_GOALS = "long_term_goals"
+    EXPERIMENTS = "experiments"
+    COMMITMENTS = "commitments"
+
+
+class LifeDomainStatus(StrEnum):
+    """A LifeDomainState's own activation status (P5 §4) - deliberately
+    not a permanent on/off flag. NOT_STARTED is the honest default for a
+    domain the user has never engaged with; DORMANT is distinct from
+    PAUSED (paused = the user deliberately set it aside; dormant = it has
+    simply had no activity or review in a long time, a fact Personal OS
+    can observe, never a user decision it invents on their behalf)."""
+
+    NOT_STARTED = "not_started"
+    ACTIVE = "active"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    DORMANT = "dormant"
+
+
+class LifeDomainClassification(StrEnum):
+    """Whether a domain is normally persistent, seasonal, or created only
+    as needed (P5 §4) - the user's own explicit classification, recorded
+    as data (life_domain.py's DEFAULT_CLASSIFICATION table) rather than
+    as branching logic, and never used to imply a permanent priority
+    ranking (§7's own explicit "not a permanent hierarchy" instruction) -
+    classification says how a domain tends to behave over time, not how
+    important it is on any given day."""
+
+    PERSISTENT = "persistent"
+    SEASONAL = "seasonal"
+    DYNAMIC = "dynamic"
+
+
+class DayModeKind(StrEnum):
+    """The day-mode categories P5 §11 names, plus CUSTOM - an open
+    escape hatch (DayMode.custom_label) for a day-mode the user names
+    themselves, since §11 explicitly requires "the model should allow a
+    user-defined day mode" and a closed enum alone cannot do that."""
+
+    STRUCTURED_PRODUCTIVE = "structured_productive"
+    FLEXIBLE = "flexible"
+    RECOVERY = "recovery"
+    FAMILY_FOCUSED = "family_focused"
+    PROJECT_FOCUSED = "project_focused"
+    STUDY_FOCUSED = "study_focused"
+    CUSTOM = "custom"
+
+
+class PriorityFactor(StrEnum):
+    """The contextual factors the Priority Engine evaluates (P5 §7) -
+    named and enumerable specifically so a PriorityExplanation can cite
+    exactly which factors contributed to a ranking, never a bare number
+    with no traceable basis. This is a fixed *vocabulary* of factors, not
+    a fixed *hierarchy* - §7's own explicit "not a permanent ranking"
+    instruction governs how these are weighted per candidate, never which
+    domain wins by default."""
+
+    URGENCY = "urgency"
+    DEADLINE = "deadline"
+    FINANCIAL_VALUE = "financial_value"
+    STRATEGIC_VALUE = "strategic_value"
+    OPPORTUNITY_VALUE = "opportunity_value"
+    GROWTH_VALUE = "growth_value"
+    MOMENTUM = "momentum"
+    CURRENT_USER_INTENT = "current_user_intent"
+    CONSEQUENCE_OF_DELAY = "consequence_of_delay"
+    AVAILABLE_TIME = "available_time"
+    DAY_MODE_ALIGNMENT = "day_mode_alignment"
+
+
+class MissionStatus(StrEnum):
+    """A Mission's own lifecycle (P5 §15) - DRAFT is a mission the user
+    has started describing but not yet committed to; CANCELLED is
+    distinct from COMPLETED so "we stopped pursuing this" is never
+    conflated with "we achieved this.\""""
+
+    DRAFT = "draft"
+    ACTIVE = "active"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+class AutonomyAction(StrEnum):
+    """The seven action levels P5 §18 names, ordered from least to most
+    consequential. RESERVE and EXECUTE are the two levels that always
+    require an explicit, scoped, non-expired AutonomyGrant (autonomy.py's
+    own REQUIRES_EXPLICIT_AUTHORIZATION set) - every level below that is
+    allowed by default, since observing, researching, preparing,
+    recommending, and asking are all reversible and non-consequential on
+    their own."""
+
+    OBSERVE = "observe"
+    RESEARCH = "research"
+    PREPARE = "prepare"
+    RECOMMEND = "recommend"
+    ASK = "ask"
+    RESERVE = "reserve"
+    EXECUTE = "execute"

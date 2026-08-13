@@ -12,6 +12,8 @@ from app.models.daily_intent_record import DailyIntentRecord
 from app.models.evening_reflection_record import EveningReflectionRecord
 from app.models.pattern_record import PatternRecord
 from app.models.experiment_record import ExperimentRecord
+from app.models.life_domain_state_record import LifeDomainStateRecord
+from app.models.mission_record import MissionRecord
 
 __all__ = [
     "Organization",
@@ -28,4 +30,6 @@ __all__ = [
     "EveningReflectionRecord",
     "PatternRecord",
     "ExperimentRecord",
+    "LifeDomainStateRecord",
+    "MissionRecord",
 ]
