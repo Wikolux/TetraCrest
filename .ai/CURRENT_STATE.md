@@ -538,3 +538,17 @@ The "Next milestone" note earlier in this file (M13 → M14 Knowledge Governance
 ## Test Suite Size
 
 2029 automated tests passing platform-wide as of M20.1 (up from 128 at M12 completion, 233 at the point M13's APIs were added, growing through 1755 pre-M19, 1987 post-M19, 2016 post-M19-completion-pass, to 2029 with architecture enforcement).
+
+---
+
+# CURRENT STATE — FURTHER UPDATE (Post-Version-1 Platform Baseline)
+
+**This section supersedes the "Test Suite Size" and "Revised Next Milestones" figures above it**, the same way the M20.2 section above superseded the M13-era log before it - nothing above is edited, this is what actually happened next.
+
+Since M20.2's reconciliation, the platform completed: the Architecture Freeze (M20.7); CP-01 (Personal Intelligence Pack, full implementation plus the CP-01.3 Insight Engine); CP-02 (Product Management Intelligence Pack, all ten implementation milestones through Release Candidate and Capability Freeze); a Version 1 Platform Baseline (`docs/00_OVERVIEW/VERSION_1_PLATFORM_BASELINE.md`) and Platform Change Policy (`docs/00_OVERVIEW/PLATFORM_CHANGE_POLICY.md`) formalizing the platform's own governing model going forward; and, as an **Application** built on top of that platform (not a further platform milestone), the first vertical slice of **Personal OS** (`backend/app/services/personal_os/`) - Daily Context & Intent, Personal State, Adaptive Daily Planning, and the Morning Intelligence Brief's own architecture.
+
+Full detail: `docs/00_OVERVIEW/Roadmap.md` (the living, milestone-by-milestone chronological record - the authoritative source, not this file) and `docs/00_OVERVIEW/VERSION_1_PLATFORM_BASELINE.md`.
+
+**Test suite size**: 3,198 tests passing platform-wide (up from 2029 at M20.1) - 766 CP-02, 317 CP-01, 64 Personal OS, the remainder platform infrastructure and architecture enforcement. Zero regressions across every step from M20.1 to here.
+
+**Revised next milestones** (superseding the list above): the next Capability Pack, per `docs/08_CAPABILITY_PACKS/Capability_Strategy.md`'s existing reservation sequence, is **CP-03 (Finance & Accounting)** - CP-03 through CP-08 are already reserved for other packs; no "Career Intelligence" Capability Pack is reserved anywhere in governance. Personal OS's own next milestone is Evening Reflection (implementing the contract already defined in `evening.py`) and a durable, database-backed `DailyIntentRepository`, both named as this phase's own deferred work, not open-ended future scope.
