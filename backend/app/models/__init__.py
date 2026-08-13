@@ -8,6 +8,8 @@ from app.models.task import Task
 from app.models.memory import Memory
 from app.models.conversation import Conversation
 from app.models.conversation_message import ConversationMessage
+from app.models.daily_intent_record import DailyIntentRecord
+from app.models.evening_reflection_record import EveningReflectionRecord
 
 __all__ = [
     "Organization",
@@ -20,4 +22,6 @@ __all__ = [
     "Memory",
     "Conversation",
     "ConversationMessage",
+    "DailyIntentRecord",
+    "EveningReflectionRecord",
 ]

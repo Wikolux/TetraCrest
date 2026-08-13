@@ -36,6 +36,8 @@ _PERSONAL_OS_MODULES = (
     "app.services.personal_os.brief",
     "app.services.personal_os.evening",
     "app.services.personal_os.morning_flow",
+    "app.services.personal_os.evening_flow",
+    "app.services.personal_os.sql_repository",
 )
 
 _FORBIDDEN_SPECIALIST_FRAGMENTS = (
@@ -107,12 +109,33 @@ def test_personal_os_registers_no_specialist_agent():
 
 
 def test_personal_os_mints_no_new_memory_framework_namespace():
-    """Personal OS's own persistence (repository.py) never calls
-    AgentMemory.remember() - it is not a Memory Framework writer at all,
-    consistent with the Application Layer Definition's "not a new memory
-    category" rule."""
-    source = inspect.getsource(importlib.import_module("app.services.personal_os.repository"))
-    assert ".remember(" not in source
+    """Personal OS's own persistence (repository.py, sql_repository.py)
+    never calls AgentMemory.remember() - it is not a Memory Framework
+    writer at all, consistent with the Application Layer Definition's
+    "not a new memory category" rule. This holds for the durable (P2)
+    implementation exactly as it held for the in-memory (P1) one -
+    switching storage medium never became a reason to reach for
+    AgentMemory instead."""
+    for module_path in ("app.services.personal_os.repository", "app.services.personal_os.sql_repository"):
+        source = inspect.getsource(importlib.import_module(module_path))
+        assert ".remember(" not in source, f"{module_path} calls .remember() - unexpected AgentMemory write"
+
+
+def test_sql_repository_uses_the_projects_own_repository_pattern_not_a_new_orm():
+    """P2 §14: the durable implementation reuses the project's own
+    BaseRepository-based repositories (app/repositories/) for all actual
+    querying - it never runs a raw db.query() itself, and never
+    introduces a second persistence framework."""
+    source = inspect.getsource(importlib.import_module("app.services.personal_os.sql_repository"))
+    assert "DailyIntentRecordRepository" in source
+    assert "EveningReflectionRecordRepository" in source
+    assert "db.query(" not in source
+
+
+def test_evening_flow_only_reaches_the_runtime_through_runtime_adapter():
+    imported = _imported_modules("app.services.personal_os.evening_flow")
+    assert any(name == "app.services.ai.agents.specialists.runtime_adapter" for name in imported)
+    assert not any(name == "app.services.ai.runtime.runtime" for name in imported)
 
 
 def test_personal_os_package_lives_outside_the_frozen_ai_operating_system():

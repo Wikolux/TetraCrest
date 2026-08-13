@@ -30,6 +30,8 @@ from app.services.ai.shared.execution_context import SharedExecutionContext
 from app.services.context.types import ContextItem, ContextPackage, ContextSection
 from app.services.prompt_builder.builder import PromptBuilder
 from app.services.personal_os.daily_intent import DailyIntent, IntentField, PlannedActivity
+from app.services.personal_os.evening import EveningReflectionRepository
+from app.services.personal_os.planning import AdaptivePlanner, PlanRecommendation
 from app.services.personal_os.repository import DailyIntentRepository
 from app.services.personal_os.shared.types import Confidence, DayType, IntentSource
 
@@ -44,11 +46,19 @@ _DAY_TYPE_KEYWORDS: tuple[tuple[DayType, tuple[str, ...]], ...] = (
 @dataclass(frozen=True)
 class MorningPrompt:
     """What Personal OS presents to open the day - never the full
-    dashboard, per §3's own explicit constraint."""
+    dashboard, per §3's own explicit constraint.
+
+    recommendations (P2 §8) are yesterday evening's own
+    PlanRecommendations, surfaced but never merged into
+    context_summary's carried-over commitments - a recommendation stays
+    a recommendation until the user's own reply turns it into today's
+    intent (§8's own "recommendations must remain distinguishable from
+    commitments")."""
 
     greeting: str
     context_summary: str
     open_question: str
+    recommendations: tuple[PlanRecommendation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -65,17 +75,23 @@ class MorningInteractionFlow:
     def __init__(
         self,
         repository: DailyIntentRepository,
+        evening_repository: EveningReflectionRepository | None = None,
         runtime_adapter: RuntimeAdapter | None = None,
         default_provider: ProviderName = ProviderName.OPENAI,
     ) -> None:
         self.repository = repository
+        self.evening_repository = evening_repository
         self.runtime_adapter = runtime_adapter or RuntimeAdapter()
         self.default_provider = default_provider
+        self.planner = AdaptivePlanner()
 
     def open(self, *, organization_id: int, user_id: int, today: date) -> MorningPrompt:
         """Establish context before asking anything - carried-over items
         from the most recent prior DailyIntent, if one exists, or an
-        honest "nothing carried over" if this is the first day."""
+        honest "nothing carried over" if this is the first day. If an
+        evening reflection exists for that same prior day, its own
+        recommendations are surfaced separately (P2 §8) - never folded
+        into the carried-over commitments themselves."""
         previous = self.repository.get_latest_before(organization_id=organization_id, user_id=user_id, before=today)
         if previous is None or not previous.planned_activities:
             context_summary = "You have nothing carried over from a previous day on record."
@@ -83,11 +99,20 @@ class MorningInteractionFlow:
             names = ", ".join(activity.description for activity in previous.planned_activities)
             context_summary = f"You have {len(previous.planned_activities)} item(s) carried over from {previous.intent_date}: {names}."
 
+        recommendations: tuple[PlanRecommendation, ...] = ()
+        if previous is not None and self.evening_repository is not None:
+            reconciliations = self.evening_repository.get_reconciliations_for_date(
+                organization_id=organization_id, user_id=user_id, reflection_date=previous.intent_date
+            )
+            if reconciliations:
+                recommendations = self.planner.recommend(previous, reconciliations)
+
         return MorningPrompt(
             greeting="Good morning.",
             context_summary=context_summary,
             open_question="Before I bring everything up - how are you doing today, and is today "
             "a continuation of that, or something different?",
+            recommendations=recommendations,
         )
 
     def submit(

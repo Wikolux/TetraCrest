@@ -72,11 +72,20 @@ class ReconciliationStatus(StrEnum):
 class ObservationBasis(StrEnum):
     """§10's fact/inference/hypothesis/recommendation distinction,
     structural rather than conventional: a caller reading a Personal OS
-    reasoning artifact can always tell which of these four it is looking
-    at from its own type, never from prose alone."""
+    reasoning artifact can always tell which of these five it is looking
+    at from its own type, never from prose alone.
+
+    USER_EXPLANATION (Evening Reflection, P2 §4) is a distinct fifth
+    basis, additive to the original four - a reason the user themselves
+    gave is neither an ObservedFact (it is an interpretation, even when
+    true) nor a system-generated Hypothesis (it did not originate with
+    Personal OS's own reasoning) - conflating the two would risk exactly
+    what §4 forbids: presenting an inference as settled, or a user's own
+    account as a system judgment."""
 
     OBSERVED_FACT = "observed_fact"
     INFERRED_PATTERN = "inferred_pattern"
+    USER_EXPLANATION = "user_explanation"
     HYPOTHESIS = "hypothesis"
     RECOMMENDATION = "recommendation"
 

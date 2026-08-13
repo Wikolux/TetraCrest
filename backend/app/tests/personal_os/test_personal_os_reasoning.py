@@ -1,11 +1,57 @@
-"""Reflection & growth reasoning (§10): observed fact / inferred pattern
-/ hypothesis / recommendation must remain structurally distinguishable -
-never presented as the same kind of claim."""
+"""Reflection & growth reasoning (P1 §10, extended P2 §4): observed fact
+/ inferred pattern / user explanation / hypothesis / recommendation must
+remain structurally distinguishable - never presented as the same kind
+of claim."""
 
 import pytest
 
-from app.services.personal_os.reasoning import GrowthRecommendation, Hypothesis, InferredPattern, ObservedFact
+from app.services.personal_os.reasoning import GrowthRecommendation, Hypothesis, InferredPattern, ObservedFact, UserExplanation
 from app.services.personal_os.shared.types import ObservationBasis
+
+
+def test_user_explanation_requires_a_statement():
+    with pytest.raises(ValueError):
+        UserExplanation(statement="")
+
+
+def test_user_explanation_carries_its_own_distinct_basis():
+    explanation = UserExplanation(statement="Two were postponed because of an unexpected meeting", explains_activity="Task A")
+    assert explanation.basis == ObservationBasis.USER_EXPLANATION
+    assert explanation.basis != ObservationBasis.OBSERVED_FACT
+    assert explanation.basis != ObservationBasis.HYPOTHESIS
+
+
+def test_hypothesis_can_be_informed_by_a_user_explanation_without_requiring_one():
+    facts = (ObservedFact(statement="A"), ObservedFact(statement="B"))
+    pattern = InferredPattern(statement="pattern", supporting_facts=facts)
+
+    unexplained = Hypothesis(statement="a guess with no explanation", explains=pattern)
+    assert unexplained.informed_by == ()
+
+    explanation = UserExplanation(statement="an unexpected meeting came up")
+    explained = Hypothesis(statement="disrupted by external commitments", explains=pattern, informed_by=(explanation,))
+    assert explained.informed_by == (explanation,)
+
+
+def test_the_full_five_basis_worked_example_from_p2_stays_distinguishable():
+    """Mirrors P2 §4's own worked example verbatim: FACT, USER
+    EXPLANATION, SYSTEM INFERENCE (Hypothesis), RECOMMENDATION - four
+    distinct artifacts (a fifth, INFERRED_PATTERN, sits between fact and
+    hypothesis structurally), never collapsed into one claim."""
+    fact_a = ObservedFact(statement="Task A was not completed")
+    fact_b = ObservedFact(statement="Task B was not completed")
+    pattern = InferredPattern(statement="Three planned tasks were not completed", supporting_facts=(fact_a, fact_b))
+    explanation = UserExplanation(statement="Two were postponed because of an unexpected meeting")
+    hypothesis = Hypothesis(
+        statement="The day was disrupted by external commitments", explains=pattern, informed_by=(explanation,)
+    )
+    recommendation = GrowthRecommendation(statement="Protect a larger uninterrupted block tomorrow", responds_to=hypothesis)
+
+    assert explanation.basis == ObservationBasis.USER_EXPLANATION
+    assert pattern.basis == ObservationBasis.INFERRED_PATTERN
+    assert hypothesis.basis == ObservationBasis.HYPOTHESIS
+    assert recommendation.basis == ObservationBasis.RECOMMENDATION
+    assert len({explanation.basis, pattern.basis, hypothesis.basis, recommendation.basis}) == 4
 
 
 def test_observed_fact_has_observed_fact_basis():

@@ -1,7 +1,4 @@
-"""Evening reflection contract (§9 of the build spec) - the shape a
-future evening-reflection flow will produce and consume, defined now so
-that flow is an implementation against an existing contract next
-milestone, not an architecture change.
+"""Evening reflection contract (P1 §9) and its P2 implementation.
 
 EveningReflection is deliberately shaped to be exactly what
 reconciliation.py's ReconciliationEvidence needs (§6) and what
@@ -9,14 +6,19 @@ reasoning.py's ObservedFact needs (§10) - the evening flow's whole job is
 producing the evidence tomorrow morning's reconciliation and this
 platform's own pattern-detection consume, not a free-form journal entry.
 
-No morning-flow-equivalent interaction logic is built this phase - only
-the data contract, per §9's own "implementation may remain minimal."
+EveningReflectionRepository now mirrors DailyIntentRepository's own
+shape exactly (repository.py): an ABC, a real in-memory reference
+implementation, and - for durable storage -
+app/services/personal_os/sql_repository.py's SqlEveningReflectionRepository.
+Same reasoning as DailyIntentRecord: Application-owned structured state,
+never routed through AgentMemory, never a new memory_type namespace.
 """
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
-from app.services.personal_os.reconciliation import ReconciliationEvidence
+from app.services.personal_os.reconciliation import ReconciliationEvidence, ReconciliationRecord
 
 
 @dataclass(frozen=True)
@@ -43,9 +45,68 @@ class EveningReflection:
                 object.__setattr__(self, name, tuple(value))
 
 
-class EveningReflectionRepository:
-    """The same shape DailyIntentRepository establishes (repository.py),
-    named here as a contract only - not implemented this phase, since no
-    evening flow exists yet to call it. The next milestone implements
-    this against the identical InMemoryDailyIntentRepository pattern,
-    not a new one."""
+class EveningReflectionRepository(ABC):
+    """The same shape DailyIntentRepository establishes (repository.py).
+    save() takes the already-reconciled ReconciliationRecords alongside
+    the reflection itself, so "what did I plan / what happened / why" all
+    stay answerable from one saved reflection (P2 §5) without needing to
+    recompute reconciliation from raw evidence on every read."""
+
+    @abstractmethod
+    def save(
+        self,
+        reflection: EveningReflection,
+        reconciliations: tuple[ReconciliationRecord, ...],
+        *,
+        organization_id: int,
+        user_id: int,
+        daily_intent_id: str | None,
+    ) -> EveningReflection:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_for_date(self, *, organization_id: int, user_id: int, reflection_date: date) -> EveningReflection | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_reconciliations_for_date(
+        self, *, organization_id: int, user_id: int, reflection_date: date
+    ) -> tuple[ReconciliationRecord, ...]:
+        """The reconciled outcome (§5) for a date's reflection - part of
+        the contract, not an implementation extra, since
+        MorningInteractionFlow needs it (tomorrow-context, P2 §8) without
+        depending on a concrete repository type."""
+        raise NotImplementedError
+
+
+class InMemoryEveningReflectionRepository(EveningReflectionRepository):
+    """Process-local reference implementation, mirroring
+    InMemoryDailyIntentRepository's own shape exactly (repository.py) -
+    one reflection per (organization_id, user_id, reflection_date), never
+    edited after being saved."""
+
+    def __init__(self) -> None:
+        self._by_key: dict[tuple[int, int, date], EveningReflection] = {}
+        self._reconciliations_by_key: dict[tuple[int, int, date], tuple[ReconciliationRecord, ...]] = {}
+
+    def save(
+        self,
+        reflection: EveningReflection,
+        reconciliations: tuple[ReconciliationRecord, ...],
+        *,
+        organization_id: int,
+        user_id: int,
+        daily_intent_id: str | None,
+    ) -> EveningReflection:
+        key = (organization_id, user_id, reflection.reflection_date)
+        self._by_key[key] = reflection
+        self._reconciliations_by_key[key] = reconciliations
+        return reflection
+
+    def get_for_date(self, *, organization_id: int, user_id: int, reflection_date: date) -> EveningReflection | None:
+        return self._by_key.get((organization_id, user_id, reflection_date))
+
+    def get_reconciliations_for_date(
+        self, *, organization_id: int, user_id: int, reflection_date: date
+    ) -> tuple[ReconciliationRecord, ...]:
+        return self._reconciliations_by_key.get((organization_id, user_id, reflection_date), ())

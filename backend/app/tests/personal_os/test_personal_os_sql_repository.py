@@ -1,0 +1,182 @@
+"""Durable persistence (P2 §6, §13): SqlDailyIntentRepository and
+SqlEveningReflectionRepository against a real database (the project's own
+db_session fixture - real SQLAlchemy, real SQLite, not a fake), proving
+DailyIntent/EveningReflection genuinely survive the repository lifecycle,
+not merely that an in-memory dict does."""
+
+from datetime import date
+
+from app.services.personal_os.daily_intent import DailyIntent, IntentField, PlannedActivity
+from app.services.personal_os.evening import EveningReflection
+from app.services.personal_os.reconciliation import ReconciliationEvidence, reconcile
+from app.services.personal_os.shared.types import Confidence, DayType, IntentSource
+from app.services.personal_os.sql_repository import SqlDailyIntentRepository, SqlEveningReflectionRepository
+
+
+def _intent(intent_date=date(2026, 8, 13), stated_intention="Work day", day_type=DayType.WORK, **kwargs):
+    return DailyIntent(intent_date=intent_date, stated_intention=stated_intention, day_type=day_type, **kwargs)
+
+
+# --- DailyIntent: create, retrieve, update (new version), history ---------------------------
+
+
+def test_daily_intent_create_and_retrieve_round_trips_exactly(db_session):
+    repo = SqlDailyIntentRepository(db_session)
+    original = _intent(
+        stated_intention="Ship the milestone",
+        day_type=DayType.MIXED,
+        planned_activities=(PlannedActivity(description="Write the report", focus_area="writing"),),
+        new_priorities=(IntentField(value="Apply for jobs", source=IntentSource.USER_EXPLICIT, confidence=Confidence.HIGH),),
+        focus_areas=("career",),
+        known_constraints=("only 4 hours available",),
+    )
+    repo.save(original, organization_id=1, user_id=2)
+
+    fetched = repo.get_for_date(organization_id=1, user_id=2, intent_date=date(2026, 8, 13))
+    assert fetched.stated_intention == "Ship the milestone"
+    assert fetched.day_type == DayType.MIXED
+    assert fetched.planned_activities[0].description == "Write the report"
+    assert fetched.new_priorities[0].value == "Apply for jobs"
+    assert fetched.new_priorities[0].source == IntentSource.USER_EXPLICIT
+    assert fetched.focus_areas == ("career",)
+    assert fetched.known_constraints == ("only 4 hours available",)
+    assert fetched.intent_id != ""
+
+
+def test_daily_intent_survives_a_fresh_query_not_just_the_same_session(db_session):
+    """Proves durability, not just that the Session's own identity map is
+    returning the same Python object back."""
+    repo = SqlDailyIntentRepository(db_session)
+    repo.save(_intent(stated_intention="Original"), organization_id=1, user_id=2)
+    db_session.expire_all()
+
+    fetched = repo.get_for_date(organization_id=1, user_id=2, intent_date=date(2026, 8, 13))
+    assert fetched.stated_intention == "Original"
+
+
+def test_daily_intent_update_creates_a_new_version_never_overwrites(db_session):
+    repo = SqlDailyIntentRepository(db_session)
+    repo.save(_intent(stated_intention="v1"), organization_id=1, user_id=2)
+    repo.save(_intent(stated_intention="v2"), organization_id=1, user_id=2)
+
+    latest = repo.get_for_date(organization_id=1, user_id=2, intent_date=date(2026, 8, 13))
+    assert latest.stated_intention == "v2"
+
+    from app.repositories.daily_intent_record_repository import DailyIntentRecordRepository
+
+    all_versions = DailyIntentRecordRepository(db_session).list_by_date_range(1, 2, date(2026, 8, 13), date(2026, 8, 13))
+    assert [v.stated_intention for v in all_versions] == ["v1", "v2"]
+
+
+def test_daily_intent_historical_dates_remain_accessible(db_session):
+    repo = SqlDailyIntentRepository(db_session)
+    repo.save(_intent(intent_date=date(2026, 8, 10), stated_intention="Monday"), organization_id=1, user_id=2)
+    repo.save(_intent(intent_date=date(2026, 8, 11), stated_intention="Tuesday"), organization_id=1, user_id=2)
+
+    assert repo.get_for_date(organization_id=1, user_id=2, intent_date=date(2026, 8, 10)).stated_intention == "Monday"
+    assert repo.get_for_date(organization_id=1, user_id=2, intent_date=date(2026, 8, 11)).stated_intention == "Tuesday"
+
+
+def test_daily_intent_latest_before_finds_the_current_intent(db_session):
+    repo = SqlDailyIntentRepository(db_session)
+    repo.save(_intent(intent_date=date(2026, 8, 10), stated_intention="Monday"), organization_id=1, user_id=2)
+
+    latest = repo.get_latest_before(organization_id=1, user_id=2, before=date(2026, 8, 13))
+    assert latest.stated_intention == "Monday"
+
+
+def test_daily_intent_repeated_updates_do_not_destroy_history(db_session):
+    repo = SqlDailyIntentRepository(db_session)
+    for i in range(5):
+        repo.save(_intent(stated_intention=f"revision {i}"), organization_id=1, user_id=2)
+
+    from app.repositories.daily_intent_record_repository import DailyIntentRecordRepository
+
+    all_versions = DailyIntentRecordRepository(db_session).list_by_date_range(1, 2, date(2026, 8, 13), date(2026, 8, 13))
+    assert len(all_versions) == 5
+    assert repo.get_for_date(organization_id=1, user_id=2, intent_date=date(2026, 8, 13)).stated_intention == "revision 4"
+
+
+def test_daily_intent_scoped_per_organization_and_user(db_session):
+    repo = SqlDailyIntentRepository(db_session)
+    repo.save(_intent(stated_intention="mine"), organization_id=1, user_id=2)
+
+    assert repo.get_for_date(organization_id=99, user_id=2, intent_date=date(2026, 8, 13)) is None
+    assert repo.get_for_date(organization_id=1, user_id=99, intent_date=date(2026, 8, 13)) is None
+
+
+# --- EveningReflection: create, retrieve, reconciliation persists ---------------------------
+
+
+def test_evening_reflection_create_and_retrieve_round_trips(db_session):
+    repo = SqlEveningReflectionRepository(db_session)
+    activity = PlannedActivity(description="Ship the report")
+    record = reconcile(activity, ReconciliationEvidence(explicitly_completed=True))
+    reflection = EveningReflection(
+        reflection_date=date(2026, 8, 13),
+        accomplishments=("Shipped the report",),
+        lessons=("Start earlier next time",),
+    )
+
+    repo.save(reflection, (record,), organization_id=1, user_id=2, daily_intent_id=None)
+    db_session.expire_all()
+
+    fetched = repo.get_for_date(organization_id=1, user_id=2, reflection_date=date(2026, 8, 13))
+    assert fetched.accomplishments == ("Shipped the report",)
+    assert fetched.lessons == ("Start earlier next time",)
+
+
+def test_evening_reflection_reconciliation_persists_with_evidence(db_session):
+    repo = SqlEveningReflectionRepository(db_session)
+    activity = PlannedActivity(description="Study AI")
+    record = reconcile(activity, ReconciliationEvidence(explicitly_postponed=True, note="ran out of time"))
+    reflection = EveningReflection(reflection_date=date(2026, 8, 13))
+
+    repo.save(reflection, (record,), organization_id=1, user_id=2, daily_intent_id=None)
+    db_session.expire_all()
+
+    reconciliations = repo.get_reconciliations_for_date(organization_id=1, user_id=2, reflection_date=date(2026, 8, 13))
+    assert len(reconciliations) == 1
+    assert reconciliations[0].activity.description == "Study AI"
+    assert reconciliations[0].status.value == "postponed"
+    assert reconciliations[0].evidence.note == "ran out of time"
+
+
+def test_evening_reflection_links_back_to_its_daily_intent(db_session):
+    intent_repo = SqlDailyIntentRepository(db_session)
+    saved_intent = intent_repo.save(_intent(stated_intention="Today's plan"), organization_id=1, user_id=2)
+
+    evening_repo = SqlEveningReflectionRepository(db_session)
+    reflection = EveningReflection(reflection_date=date(2026, 8, 13))
+    evening_repo.save(reflection, (), organization_id=1, user_id=2, daily_intent_id=saved_intent.intent_id)
+
+    from app.repositories.evening_reflection_record_repository import EveningReflectionRecordRepository
+
+    record = EveningReflectionRecordRepository(db_session).get_for_date(1, 2, date(2026, 8, 13))
+    assert record.daily_intent_id == int(saved_intent.intent_id)
+
+
+def test_original_plan_and_actual_outcome_are_both_independently_recoverable(db_session):
+    """The exact question §5/§18 require an answer to: "what did I
+    originally plan" and "what actually happened" must both still be
+    readable, from a fresh query, without one overwriting the other."""
+    intent_repo = SqlDailyIntentRepository(db_session)
+    evening_repo = SqlEveningReflectionRepository(db_session)
+
+    original = _intent(
+        stated_intention="Study AI and ship Tetra OS",
+        day_type=DayType.MIXED,
+        planned_activities=(PlannedActivity(description="Study AI"), PlannedActivity(description="Ship Tetra OS")),
+    )
+    intent_repo.save(original, organization_id=1, user_id=2)
+
+    r1 = reconcile(PlannedActivity(description="Study AI"), ReconciliationEvidence(explicitly_postponed=True, note="meeting"))
+    r2 = reconcile(PlannedActivity(description="Ship Tetra OS"), ReconciliationEvidence(explicitly_completed=True))
+    evening_repo.save(EveningReflection(reflection_date=date(2026, 8, 13)), (r1, r2), organization_id=1, user_id=2, daily_intent_id=None)
+    db_session.expire_all()
+
+    what_was_planned = intent_repo.get_for_date(organization_id=1, user_id=2, intent_date=date(2026, 8, 13))
+    what_happened = evening_repo.get_reconciliations_for_date(organization_id=1, user_id=2, reflection_date=date(2026, 8, 13))
+
+    assert {a.description for a in what_was_planned.planned_activities} == {"Study AI", "Ship Tetra OS"}
+    assert {(r.activity.description, r.status.value) for r in what_happened} == {("Study AI", "postponed"), ("Ship Tetra OS", "completed")}
