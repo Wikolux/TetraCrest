@@ -51,6 +51,16 @@ class DailyIntentRepository(ABC):
         calendar day prior (a user may skip a day)."""
         raise NotImplementedError
 
+    @abstractmethod
+    def list_range(self, *, organization_id: int, user_id: int, start: date, end: date) -> tuple[DailyIntent, ...]:
+        """The latest version of DailyIntent for every date in
+        [start, end] that has one - never every version (a pattern
+        detector needs "what was the day's plan," not its full edit
+        history). Added in P3 specifically for multi-day pattern
+        detection (pattern_evidence.py); P1/P2 never needed a range
+        query, only single-date and latest-before."""
+        raise NotImplementedError
+
 
 class InMemoryDailyIntentRepository(DailyIntentRepository):
     """Process-local reference implementation. Keyed by
@@ -82,3 +92,11 @@ class InMemoryDailyIntentRepository(DailyIntentRepository):
         if not candidates:
             return None
         return max(candidates, key=lambda intent: intent.intent_date)
+
+    def list_range(self, *, organization_id: int, user_id: int, start: date, end: date) -> tuple[DailyIntent, ...]:
+        matches = [
+            versions[-1]
+            for (org_id, uid, intent_date), versions in self._by_key.items()
+            if org_id == organization_id and uid == user_id and start <= intent_date <= end and versions
+        ]
+        return tuple(sorted(matches, key=lambda intent: intent.intent_date))

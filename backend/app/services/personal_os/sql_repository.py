@@ -23,13 +23,18 @@ from sqlalchemy.orm import Session
 
 from app.models.daily_intent_record import DailyIntentRecord
 from app.models.evening_reflection_record import EveningReflectionRecord
+from app.models.pattern_record import PatternRecord
 from app.repositories.daily_intent_record_repository import DailyIntentRecordRepository
 from app.repositories.evening_reflection_record_repository import EveningReflectionRecordRepository
+from app.repositories.pattern_record_repository import PatternRecordRepository
 from app.services.personal_os.daily_intent import DailyIntent, IntentField, PlannedActivity
 from app.services.personal_os.evening import EveningReflection, EveningReflectionRepository
+from app.services.personal_os.pattern import Pattern, PatternEvidenceItem
+from app.services.personal_os.pattern_repository import PatternRepository
+from app.services.personal_os.reasoning import GrowthRecommendation, Hypothesis, InferredPattern, ObservedFact
 from app.services.personal_os.reconciliation import ReconciliationEvidence, ReconciliationRecord
 from app.services.personal_os.repository import DailyIntentRepository
-from app.services.personal_os.shared.types import Confidence, DayType, IntentSource, ReconciliationStatus
+from app.services.personal_os.shared.types import Confidence, DayType, IntentSource, PatternStatus, PatternType, ReconciliationStatus
 
 
 def _intent_fields_to_json(fields: tuple[IntentField, ...]) -> str:
@@ -46,7 +51,12 @@ def _intent_fields_from_json(raw: str) -> tuple[IntentField, ...]:
 def _activities_to_json(activities: tuple[PlannedActivity, ...]) -> str:
     return json.dumps(
         [
-            {"description": a.description, "focus_area": a.focus_area, "deadline": a.deadline.isoformat() if a.deadline else None}
+            {
+                "description": a.description,
+                "focus_area": a.focus_area,
+                "deadline": a.deadline.isoformat() if a.deadline else None,
+                "estimated_hours": a.estimated_hours,
+            }
             for a in activities
         ]
     )
@@ -58,6 +68,8 @@ def _activities_from_json(raw: str) -> tuple[PlannedActivity, ...]:
             description=row["description"],
             focus_area=row["focus_area"],
             deadline=date.fromisoformat(row["deadline"]) if row["deadline"] else None,
+            # .get() - rows written before P3 have no estimated_hours key at all.
+            estimated_hours=row.get("estimated_hours"),
         )
         for row in json.loads(raw)
     )
@@ -105,6 +117,13 @@ class SqlDailyIntentRepository(DailyIntentRepository):
         record = self._records.get_latest_before(organization_id, user_id, before)
         return self._to_domain(record) if record else None
 
+    def list_range(self, *, organization_id: int, user_id: int, start: date, end: date) -> tuple[DailyIntent, ...]:
+        all_versions = self._records.list_by_date_range(organization_id, user_id, start, end)
+        latest_by_date: dict[date, DailyIntentRecord] = {}
+        for record in all_versions:  # ascending id order - later versions overwrite earlier ones per date
+            latest_by_date[record.intent_date] = record
+        return tuple(self._to_domain(latest_by_date[d]) for d in sorted(latest_by_date))
+
     @staticmethod
     def _to_domain(record: DailyIntentRecord) -> DailyIntent:
         created_at = record.created_at if isinstance(record.created_at, datetime) else datetime.fromisoformat(str(record.created_at))
@@ -138,6 +157,7 @@ def _evidence_to_dict(evidence: ReconciliationEvidence) -> dict:
         "explicitly_rested_instead": evidence.explicitly_rested_instead,
         "superseding_priority": evidence.superseding_priority,
         "note": evidence.note,
+        "actual_hours": evidence.actual_hours,
     }
 
 
@@ -150,6 +170,8 @@ def _evidence_from_dict(row: dict) -> ReconciliationEvidence:
         explicitly_rested_instead=row["explicitly_rested_instead"],
         superseding_priority=row["superseding_priority"],
         note=row["note"],
+        # .get() - rows written before P3 have no actual_hours key at all.
+        actual_hours=row.get("actual_hours"),
     )
 
 
@@ -217,6 +239,16 @@ class SqlEveningReflectionRepository(EveningReflectionRepository):
         record = self._records.get_for_date(organization_id, user_id, reflection_date)
         return _reconciliations_from_json(record.reconciliation_json) if record else ()
 
+    def list_reconciliations_range(
+        self, *, organization_id: int, user_id: int, start: date, end: date
+    ) -> tuple[tuple[date, ReconciliationRecord], ...]:
+        records = self._records.list_by_date_range(organization_id, user_id, start, end)
+        pairs = []
+        for record in records:
+            for reconciliation in _reconciliations_from_json(record.reconciliation_json):
+                pairs.append((record.reflection_date, reconciliation))
+        return tuple(pairs)
+
     @staticmethod
     def _to_domain(record: EveningReflectionRecord) -> EveningReflection:
         created_at = (
@@ -231,4 +263,145 @@ class SqlEveningReflectionRepository(EveningReflectionRepository):
             worth_remembering=_strings_from_json(record.worth_remembering_json),
             preparation_for_tomorrow=_strings_from_json(record.preparation_for_tomorrow_json),
             created_at=created_at,
+        )
+
+
+# --- Pattern (P3) serialization -------------------------------------------------------------
+
+
+def _evidence_items_to_json(items: tuple[PatternEvidenceItem, ...]) -> str:
+    return json.dumps(
+        [
+            {
+                "observation_date": item.observation_date.isoformat(),
+                "activity_description": item.activity_description,
+                "activity_category": item.activity_category,
+                "status": item.status,
+                "estimated_hours": item.estimated_hours,
+                "actual_hours": item.actual_hours,
+                "stated_reason": item.stated_reason,
+            }
+            for item in items
+        ]
+    )
+
+
+def _evidence_items_from_json(raw: str) -> tuple[PatternEvidenceItem, ...]:
+    return tuple(
+        PatternEvidenceItem(
+            observation_date=date.fromisoformat(row["observation_date"]),
+            activity_description=row["activity_description"],
+            activity_category=row["activity_category"],
+            status=row["status"],
+            estimated_hours=row.get("estimated_hours"),
+            actual_hours=row.get("actual_hours"),
+            stated_reason=row.get("stated_reason", ""),
+        )
+        for row in json.loads(raw)
+    )
+
+
+def _facts_to_dicts(facts: tuple[ObservedFact, ...]) -> list[dict]:
+    return [{"statement": f.statement, "evidence_ref": f.evidence_ref} for f in facts]
+
+
+def _facts_from_dicts(rows: list[dict]) -> tuple[ObservedFact, ...]:
+    return tuple(ObservedFact(statement=row["statement"], evidence_ref=row.get("evidence_ref", "")) for row in rows)
+
+
+def _hypothesis_to_dict(hypothesis: Hypothesis) -> dict:
+    return {
+        "statement": hypothesis.statement,
+        "explains_statement": hypothesis.explains.statement,
+        "explains_supporting_facts": _facts_to_dicts(hypothesis.explains.supporting_facts),
+        "informed_by": [{"statement": e.statement, "explains_activity": e.explains_activity} for e in hypothesis.informed_by],
+    }
+
+
+def _hypothesis_from_dict(row: dict) -> Hypothesis:
+    from app.services.personal_os.reasoning import UserExplanation
+
+    pattern = InferredPattern(statement=row["explains_statement"], supporting_facts=_facts_from_dicts(row["explains_supporting_facts"]))
+    explanations = tuple(
+        UserExplanation(statement=e["statement"], explains_activity=e.get("explains_activity", "")) for e in row.get("informed_by", [])
+    )
+    return Hypothesis(statement=row["statement"], explains=pattern, informed_by=explanations)
+
+
+def _hypotheses_to_json(hypotheses: tuple[Hypothesis, ...]) -> str:
+    return json.dumps([_hypothesis_to_dict(h) for h in hypotheses])
+
+
+def _hypotheses_from_json(raw: str) -> tuple[Hypothesis, ...]:
+    return tuple(_hypothesis_from_dict(row) for row in json.loads(raw))
+
+
+def _recommendation_to_json(recommendation: GrowthRecommendation | None) -> str | None:
+    if recommendation is None:
+        return None
+    return json.dumps({"statement": recommendation.statement, "responds_to": _hypothesis_to_dict(recommendation.responds_to)})
+
+
+def _recommendation_from_json(raw: str | None) -> GrowthRecommendation | None:
+    if raw is None:
+        return None
+    row = json.loads(raw)
+    return GrowthRecommendation(statement=row["statement"], responds_to=_hypothesis_from_dict(row["responds_to"]))
+
+
+class SqlPatternRepository(PatternRepository):
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self._records = PatternRecordRepository(db)
+
+    def save(self, pattern: Pattern, *, organization_id: int, user_id: int) -> Pattern:
+        record = PatternRecord(
+            organization_id=organization_id,
+            user_id=user_id,
+            pattern_type=pattern.pattern_type.value,
+            observation_window_start=pattern.observation_window_start,
+            observation_window_end=pattern.observation_window_end,
+            evidence_json=_evidence_items_to_json(pattern.evidence),
+            observed_facts_json=json.dumps(_facts_to_dicts(pattern.observed_facts)),
+            pattern_statement=pattern.pattern_statement,
+            confidence=pattern.confidence.value,
+            possible_hypotheses_json=_hypotheses_to_json(pattern.possible_hypotheses),
+            user_interpretation=pattern.user_interpretation,
+            recommendation_json=_recommendation_to_json(pattern.recommendation),
+            status=pattern.status.value,
+            supersedes_pattern_id=pattern.supersedes_pattern_id,
+        )
+        self._records.create(record)
+        return self._to_domain(record)
+
+    def get_latest(self, *, organization_id: int, user_id: int, pattern_type: PatternType) -> Pattern | None:
+        record = self._records.get_latest_by_type(organization_id, user_id, pattern_type.value)
+        return self._to_domain(record) if record else None
+
+    def list_active(self, *, organization_id: int, user_id: int) -> tuple[Pattern, ...]:
+        records = self._records.list_latest_per_type(organization_id, user_id)
+        patterns = [self._to_domain(record) for record in records]
+        active = [p for p in patterns if p.status not in (PatternStatus.DISMISSED, PatternStatus.SUPERSEDED)]
+        return tuple(sorted(active, key=lambda p: p.created_at))
+
+    @staticmethod
+    def _to_domain(record: PatternRecord) -> Pattern:
+        created_at = record.created_at if isinstance(record.created_at, datetime) else datetime.fromisoformat(str(record.created_at))
+        updated_at = record.updated_at if isinstance(record.updated_at, datetime) else datetime.fromisoformat(str(record.updated_at))
+        return Pattern(
+            pattern_id=str(record.id),
+            pattern_type=PatternType(record.pattern_type),
+            observation_window_start=record.observation_window_start,
+            observation_window_end=record.observation_window_end,
+            evidence=_evidence_items_from_json(record.evidence_json),
+            observed_facts=_facts_from_dicts(json.loads(record.observed_facts_json)),
+            pattern_statement=record.pattern_statement,
+            confidence=Confidence(record.confidence),
+            possible_hypotheses=_hypotheses_from_json(record.possible_hypotheses_json),
+            user_interpretation=record.user_interpretation,
+            recommendation=_recommendation_from_json(record.recommendation_json),
+            status=PatternStatus(record.status),
+            supersedes_pattern_id=record.supersedes_pattern_id,
+            created_at=created_at,
+            updated_at=updated_at,
         )

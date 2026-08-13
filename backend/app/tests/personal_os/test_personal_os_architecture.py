@@ -38,6 +38,11 @@ _PERSONAL_OS_MODULES = (
     "app.services.personal_os.morning_flow",
     "app.services.personal_os.evening_flow",
     "app.services.personal_os.sql_repository",
+    "app.services.personal_os.pattern",
+    "app.services.personal_os.pattern_evidence",
+    "app.services.personal_os.pattern_detectors",
+    "app.services.personal_os.pattern_repository",
+    "app.services.personal_os.pattern_flow",
 )
 
 _FORBIDDEN_SPECIALIST_FRAGMENTS = (
@@ -116,7 +121,11 @@ def test_personal_os_mints_no_new_memory_framework_namespace():
     implementation exactly as it held for the in-memory (P1) one -
     switching storage medium never became a reason to reach for
     AgentMemory instead."""
-    for module_path in ("app.services.personal_os.repository", "app.services.personal_os.sql_repository"):
+    for module_path in (
+        "app.services.personal_os.repository",
+        "app.services.personal_os.sql_repository",
+        "app.services.personal_os.pattern_repository",
+    ):
         source = inspect.getsource(importlib.import_module(module_path))
         assert ".remember(" not in source, f"{module_path} calls .remember() - unexpected AgentMemory write"
 
@@ -136,6 +145,27 @@ def test_evening_flow_only_reaches_the_runtime_through_runtime_adapter():
     imported = _imported_modules("app.services.personal_os.evening_flow")
     assert any(name == "app.services.ai.agents.specialists.runtime_adapter" for name in imported)
     assert not any(name == "app.services.ai.runtime.runtime" for name in imported)
+
+
+def test_pattern_flow_only_reaches_the_runtime_through_runtime_adapter():
+    """P3 §11's own narration step must follow morning_flow.py's/
+    evening_flow.py's exact same seam - no second, ad hoc Runtime
+    invocation path introduced just for pattern surfacing."""
+    imported = _imported_modules("app.services.personal_os.pattern_flow")
+    assert any(name == "app.services.ai.agents.specialists.runtime_adapter" for name in imported)
+    assert not any(name == "app.services.ai.runtime.runtime" for name in imported)
+
+
+def test_pattern_detectors_and_evidence_reader_do_not_touch_the_runtime():
+    """P3 §18: detection and evidence-gathering must stay deterministic -
+    neither module may import RuntimeAdapter/PromptBuilder at all, since
+    a generative call anywhere in this path would make "same evidence,
+    same config, same result" unprovable."""
+    for module_path in ("app.services.personal_os.pattern_detectors", "app.services.personal_os.pattern_evidence"):
+        imported = _imported_modules(module_path)
+        assert not any("runtime_adapter" in name or "prompt_builder" in name for name in imported), (
+            f"{module_path} imports a Runtime/PromptBuilder seam - detection must remain deterministic"
+        )
 
 
 def test_personal_os_package_lives_outside_the_frozen_ai_operating_system():

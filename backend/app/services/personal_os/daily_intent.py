@@ -41,15 +41,27 @@ class PlannedActivity:
     """One activity the user intends to do today - deliberately not
     "a task," since Personal OS's own DailyIntent is about intention, not
     execution tracking (that is Task Reconciliation's job, the next day,
-    against whatever activities were actually planned)."""
+    against whatever activities were actually planned).
+
+    estimated_hours (P3) is optional and additive - P1/P2 never set it,
+    and every existing caller still constructs a valid PlannedActivity
+    without it. It exists specifically so Estimation Accuracy pattern
+    detection (P3 §6) has real data to compare against actual_hours
+    (reconciliation.py's own ReconciliationEvidence) - before this field
+    existed, no duration data existed anywhere in Personal OS's model at
+    all, so "compare planned vs actual" could not have been honestly
+    implemented."""
 
     description: str
     focus_area: str = ""
     deadline: date | None = None
+    estimated_hours: float | None = None
 
     def __post_init__(self) -> None:
         if not self.description:
             raise ValueError("PlannedActivity.description is required")
+        if self.estimated_hours is not None and self.estimated_hours <= 0:
+            raise ValueError("PlannedActivity.estimated_hours must be positive when given")
 
 
 @dataclass(frozen=True)

@@ -25,3 +25,22 @@ class EveningReflectionRecordRepository(BaseRepository[EveningReflectionRecord])
             .order_by(EveningReflectionRecord.id.desc())
             .first()
         )
+
+    def list_by_date_range(
+        self, organization_id: int, user_id: int, start: date, end: date
+    ) -> list[EveningReflectionRecord]:
+        """Every reflection in range, oldest first - added in P3 for
+        multi-day pattern detection (pattern_evidence.py), mirroring
+        DailyIntentRecordRepository.list_by_date_range's own precedent
+        exactly."""
+        return (
+            self.db.query(EveningReflectionRecord)
+            .filter(
+                EveningReflectionRecord.organization_id == organization_id,
+                EveningReflectionRecord.user_id == user_id,
+                EveningReflectionRecord.reflection_date >= start,
+                EveningReflectionRecord.reflection_date <= end,
+            )
+            .order_by(EveningReflectionRecord.reflection_date.asc(), EveningReflectionRecord.id.asc())
+            .all()
+        )

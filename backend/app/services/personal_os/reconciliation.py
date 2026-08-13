@@ -20,7 +20,13 @@ class ReconciliationEvidence:
     yesterday's evening reflection or explicit user statement today -
     never inferred from silence. A PlannedActivity with no
     ReconciliationEvidence at all reconciles to UNKNOWN, never
-    INCOMPLETE."""
+    INCOMPLETE.
+
+    actual_hours (P3) is optional and additive, the counterpart to
+    PlannedActivity.estimated_hours - only meaningful when the activity
+    was actually worked on (typically alongside explicitly_completed),
+    never required, since most evidence still comes from free-form text
+    with no duration mentioned at all."""
 
     explicitly_completed: bool = False
     explicitly_postponed: bool = False
@@ -29,6 +35,7 @@ class ReconciliationEvidence:
     explicitly_rested_instead: bool = False
     superseding_priority: str = ""
     note: str = ""
+    actual_hours: float | None = None
 
 
 @dataclass(frozen=True)

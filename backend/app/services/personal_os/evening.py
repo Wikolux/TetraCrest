@@ -78,6 +78,18 @@ class EveningReflectionRepository(ABC):
         depending on a concrete repository type."""
         raise NotImplementedError
 
+    @abstractmethod
+    def list_reconciliations_range(
+        self, *, organization_id: int, user_id: int, start: date, end: date
+    ) -> tuple[tuple[date, ReconciliationRecord], ...]:
+        """Every reconciled outcome across [start, end], each paired with
+        the date it came from - added in P3 for multi-day pattern
+        detection (pattern_evidence.py). The date pairing matters:
+        ReconciliationRecord itself carries no date, so a flat tuple of
+        records alone would lose exactly the "when" a pattern detector
+        needs to build its own observation_window and dated evidence."""
+        raise NotImplementedError
+
 
 class InMemoryEveningReflectionRepository(EveningReflectionRepository):
     """Process-local reference implementation, mirroring
@@ -110,3 +122,12 @@ class InMemoryEveningReflectionRepository(EveningReflectionRepository):
         self, *, organization_id: int, user_id: int, reflection_date: date
     ) -> tuple[ReconciliationRecord, ...]:
         return self._reconciliations_by_key.get((organization_id, user_id, reflection_date), ())
+
+    def list_reconciliations_range(
+        self, *, organization_id: int, user_id: int, start: date, end: date
+    ) -> tuple[tuple[date, ReconciliationRecord], ...]:
+        pairs = []
+        for (org_id, uid, reflection_date), records in sorted(self._reconciliations_by_key.items(), key=lambda kv: kv[0][2]):
+            if org_id == organization_id and uid == user_id and start <= reflection_date <= end:
+                pairs.extend((reflection_date, record) for record in records)
+        return tuple(pairs)

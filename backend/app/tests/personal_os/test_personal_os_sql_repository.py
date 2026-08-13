@@ -8,9 +8,11 @@ from datetime import date
 
 from app.services.personal_os.daily_intent import DailyIntent, IntentField, PlannedActivity
 from app.services.personal_os.evening import EveningReflection
+from app.services.personal_os.pattern import Pattern, PatternEvidenceItem
+from app.services.personal_os.reasoning import GrowthRecommendation, Hypothesis, InferredPattern, ObservedFact, UserExplanation
 from app.services.personal_os.reconciliation import ReconciliationEvidence, reconcile
-from app.services.personal_os.shared.types import Confidence, DayType, IntentSource
-from app.services.personal_os.sql_repository import SqlDailyIntentRepository, SqlEveningReflectionRepository
+from app.services.personal_os.shared.types import Confidence, DayType, IntentSource, PatternStatus, PatternType
+from app.services.personal_os.sql_repository import SqlDailyIntentRepository, SqlEveningReflectionRepository, SqlPatternRepository
 
 
 def _intent(intent_date=date(2026, 8, 13), stated_intention="Work day", day_type=DayType.WORK, **kwargs):
@@ -180,3 +182,100 @@ def test_original_plan_and_actual_outcome_are_both_independently_recoverable(db_
 
     assert {a.description for a in what_was_planned.planned_activities} == {"Study AI", "Ship Tetra OS"}
     assert {(r.activity.description, r.status.value) for r in what_happened} == {("Study AI", "postponed"), ("Ship Tetra OS", "completed")}
+
+
+# --- Pattern (P3 §10, §14): durable persistence of a full nested reasoning chain ------------------
+
+
+def _full_pattern(status=PatternStatus.PENDING_CONFIRMATION):
+    facts = (
+        ObservedFact(statement='"Study transformers" postponed on 2026-07-01', evidence_ref="2026-07-01:Study transformers"),
+        ObservedFact(statement='"Study transformers" postponed on 2026-07-03', evidence_ref="2026-07-03:Study transformers"),
+    )
+    explanation = UserExplanation(statement="I kept running out of time in the evenings", explains_activity="Study transformers")
+    inferred = InferredPattern(statement="Study transformers was postponed twice.", supporting_facts=facts)
+    hypothesis = Hypothesis(statement="Estimates for this activity may be optimistic.", explains=inferred, informed_by=(explanation,))
+    recommendation = GrowthRecommendation(statement="Consider a larger time buffer.", responds_to=hypothesis)
+    evidence = (
+        PatternEvidenceItem(observation_date=date(2026, 7, 1), activity_description="Study transformers", activity_category="learning", status="postponed"),
+        PatternEvidenceItem(observation_date=date(2026, 7, 3), activity_description="Study transformers", activity_category="learning", status="postponed"),
+    )
+    return Pattern(
+        pattern_id="",
+        pattern_type=PatternType.REPEATED_POSTPONEMENT,
+        observation_window_start=date(2026, 7, 1),
+        observation_window_end=date(2026, 7, 3),
+        evidence=evidence,
+        observed_facts=facts,
+        pattern_statement="2 learning activities were postponed between 2026-07-01 and 2026-07-03.",
+        confidence=Confidence.LOW,
+        possible_hypotheses=(hypothesis,),
+        recommendation=recommendation,
+        status=status,
+    )
+
+
+def test_pattern_round_trips_the_full_nested_reasoning_chain(db_session):
+    repo = SqlPatternRepository(db_session)
+    saved = repo.save(_full_pattern(), organization_id=1, user_id=2)
+    db_session.expire_all()
+
+    fetched = repo.get_latest(organization_id=1, user_id=2, pattern_type=PatternType.REPEATED_POSTPONEMENT)
+    assert fetched.pattern_id == saved.pattern_id
+    assert fetched.pattern_statement == saved.pattern_statement
+    assert fetched.confidence == Confidence.LOW
+    assert len(fetched.observed_facts) == 2
+    assert len(fetched.possible_hypotheses) == 1
+    assert fetched.possible_hypotheses[0].statement == "Estimates for this activity may be optimistic."
+    assert fetched.possible_hypotheses[0].informed_by[0].statement == "I kept running out of time in the evenings"
+    assert fetched.recommendation.statement == "Consider a larger time buffer."
+
+
+def test_pattern_survives_a_fresh_session_not_just_the_same_one(db_engine):
+    """Proves durability, not just the Session's own identity map -
+    mirrors test_daily_intent_survives_a_fresh_query_not_just_the_same_session,
+    but with two genuinely independent Sessions against the same engine."""
+    from sqlalchemy.orm import sessionmaker
+
+    SessionLocal = sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
+
+    session1 = SessionLocal()
+    SqlPatternRepository(session1).save(_full_pattern(), organization_id=1, user_id=2)
+    session1.commit()
+    session1.close()
+
+    session2 = SessionLocal()
+    fetched = SqlPatternRepository(session2).get_latest(organization_id=1, user_id=2, pattern_type=PatternType.REPEATED_POSTPONEMENT)
+    assert fetched is not None
+    assert fetched.pattern_statement == "2 learning activities were postponed between 2026-07-01 and 2026-07-03."
+    session2.close()
+
+
+def test_pattern_status_change_creates_a_new_version_never_overwrites(db_session):
+    from dataclasses import replace
+
+    repo = SqlPatternRepository(db_session)
+    first = repo.save(_full_pattern(status=PatternStatus.OBSERVED), organization_id=1, user_id=2)
+    repo.save(replace(first, status=PatternStatus.CONFIRMED), organization_id=1, user_id=2)
+
+    latest = repo.get_latest(organization_id=1, user_id=2, pattern_type=PatternType.REPEATED_POSTPONEMENT)
+    assert latest.status == PatternStatus.CONFIRMED
+
+    from app.models.pattern_record import PatternRecord
+
+    all_rows = db_session.query(PatternRecord).filter_by(organization_id=1, user_id=2).order_by(PatternRecord.id.asc()).all()
+    assert [row.status for row in all_rows] == ["observed", "confirmed"]
+
+
+def test_list_active_excludes_dismissed_and_superseded(db_session):
+    from dataclasses import replace
+
+    repo = SqlPatternRepository(db_session)
+    repo.save(_full_pattern(status=PatternStatus.CONFIRMED), organization_id=1, user_id=2)
+
+    dismissed_pattern = replace(_full_pattern(status=PatternStatus.DISMISSED), pattern_type=PatternType.ESTIMATION_ACCURACY)
+    repo.save(dismissed_pattern, organization_id=1, user_id=2)
+
+    active = repo.list_active(organization_id=1, user_id=2)
+    assert len(active) == 1
+    assert active[0].pattern_type == PatternType.REPEATED_POSTPONEMENT

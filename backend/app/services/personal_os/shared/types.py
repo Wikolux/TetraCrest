@@ -103,3 +103,57 @@ class RecommendationKind(StrEnum):
     RESEQUENCE = "resequence"
     PROTECT_REST = "protect_rest"
     ALLOCATE_MORE_TIME = "allocate_more_time"
+
+
+class PatternType(StrEnum):
+    """The smallest useful initial set (P3 §4) - deliberately not every
+    conceivable behavioural analytic. Each has its own detector in
+    pattern_detectors.py; adding a sixth type is a new StrEnum member and
+    a new detector function, never a change to Pattern's own shape."""
+
+    REPEATED_POSTPONEMENT = "repeated_postponement"
+    ESTIMATION_ACCURACY = "estimation_accuracy"
+    RECURRING_BLOCKER = "recurring_blocker"
+    PRIORITY_CHANGE = "priority_change"
+    COMPLETION_PATTERN = "completion_pattern"
+
+
+class PatternStatus(StrEnum):
+    """A Pattern's own lifecycle (P3 §10, §11) - never treated as
+    permanent truth without one of these. OBSERVED is the initial,
+    system-only state (detected, not yet surfaced); PENDING_CONFIRMATION
+    is set the moment it is actually shown to the user; CONFIRMED/
+    CORRECTED/DISMISSED are the three possible user responses (§11);
+    SUPERSEDED marks a pattern a later, more complete detection run has
+    replaced - the same append-only "a revision is a new entry" discipline
+    every other durable Personal OS record already follows, applied to
+    status transitions instead of content."""
+
+    OBSERVED = "observed"
+    PENDING_CONFIRMATION = "pending_confirmation"
+    CONFIRMED = "confirmed"
+    CORRECTED = "corrected"
+    DISMISSED = "dismissed"
+    SUPERSEDED = "superseded"
+
+
+class UserPatternResponse(StrEnum):
+    """How the user may respond when a Pattern is surfaced (P3 §11) -
+    "defer judgment" is a real, first-class response (PatternStatus stays
+    PENDING_CONFIRMATION, never silently advanced to CONFIRMED by
+    default), not merely the absence of a reply."""
+
+    CONFIRM = "confirm"
+    REJECT = "reject"
+    CORRECT = "correct"
+    DEFER = "defer"
+
+
+class ExperimentStatus(StrEnum):
+    """An Experiment's own lifecycle (P3 §13) - PROPOSED until the user
+    actually starts it, ACTIVE while the adjustment is in effect,
+    REVIEWED once the measurement has actually been compared."""
+
+    PROPOSED = "proposed"
+    ACTIVE = "active"
+    REVIEWED = "reviewed"
