@@ -6,17 +6,23 @@ not merely that an in-memory dict does."""
 
 from datetime import date
 
+from app.services.personal_os.adaptation import Adaptation, AdaptationTarget
+from app.services.personal_os.adaptation_flow import AdaptationFlow
 from app.services.personal_os.daily_intent import DailyIntent, IntentField, PlannedActivity
 from app.services.personal_os.day_mode import DayMode
-from app.services.personal_os.evening import EveningReflection
+from app.services.personal_os.evening import EveningReflection, InMemoryEveningReflectionRepository
 from app.services.personal_os.experiment import Experiment, ExperimentBaseline
 from app.services.personal_os.life_domain import default_state
 from app.services.personal_os.living_day import DayEvent, reconstruct
 from app.services.personal_os.mission import AutonomyGrant, Mission
 from app.services.personal_os.pattern import Pattern, PatternEvidenceItem
+from app.services.personal_os.pattern_flow import PatternDetectionFlow
 from app.services.personal_os.reasoning import GrowthRecommendation, Hypothesis, InferredPattern, ObservedFact, UserExplanation
-from app.services.personal_os.reconciliation import ReconciliationEvidence, reconcile
+from app.services.personal_os.reconciliation import ReconciliationEvidence, reconcile, reconcile_all
+from app.services.personal_os.repository import InMemoryDailyIntentRepository
 from app.services.personal_os.shared.types import (
+    AdaptationScope,
+    AdaptationStatus,
     AutonomyAction,
     Confidence,
     DayEventType,
@@ -30,8 +36,10 @@ from app.services.personal_os.shared.types import (
     MissionStatus,
     PatternStatus,
     PatternType,
+    UserPatternResponse,
 )
 from app.services.personal_os.sql_repository import (
+    SqlAdaptationRepository,
     SqlDailyIntentRepository,
     SqlDayEventRepository,
     SqlEveningReflectionRepository,
@@ -631,3 +639,141 @@ def test_day_event_scoped_by_organization_and_user(db_session):
     repo.append(DayEvent(event_type=DayEventType.ACTIVITY_ADDED, activity_id="a1", description="x"), organization_id=1, user_id=99, day_date=day)
 
     assert len(repo.list_for_day(organization_id=1, user_id=2, day_date=day)) == 1
+
+
+# --- Adaptation (P7.10): durable persistence of the controlled adaptation lifecycle ----------------
+
+
+def _adaptation(scope=AdaptationScope.USER_PREFERENCE, target_id="2", status=AdaptationStatus.PROPOSED, **kwargs):
+    target = AdaptationTarget(scope=scope, target_id=target_id)
+    return Adaptation(adaptation_id="", target=target, pattern_id="pattern-1", confidence=Confidence.MEDIUM, status=status, **kwargs)
+
+
+def test_adaptation_round_trips(db_session):
+    repo = SqlAdaptationRepository(db_session)
+    saved = repo.save(_adaptation(expected_outcome="Fewer postponements"), organization_id=1, user_id=2)
+    db_session.expire_all()
+
+    fetched = repo.get_latest(organization_id=1, user_id=2, adaptation_id=saved.adaptation_id)
+    assert fetched.status == AdaptationStatus.PROPOSED
+    assert fetched.target.scope == AdaptationScope.USER_PREFERENCE
+    assert fetched.target.target_id == "2"
+    assert fetched.pattern_id == "pattern-1"
+    assert fetched.expected_outcome == "Fewer postponements"
+
+
+def test_adaptation_survives_a_fresh_session(db_engine):
+    from sqlalchemy.orm import sessionmaker
+
+    SessionLocal = sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
+    session1 = SessionLocal()
+    saved = SqlAdaptationRepository(session1).save(_adaptation(), organization_id=1, user_id=2)
+    session1.commit()
+    session1.close()
+
+    session2 = SessionLocal()
+    fetched = SqlAdaptationRepository(session2).get_latest(organization_id=1, user_id=2, adaptation_id=saved.adaptation_id)
+    assert fetched is not None
+    assert fetched.pattern_id == "pattern-1"
+    session2.close()
+
+
+def test_adaptation_lifecycle_transitions_preserve_history(db_session):
+    from dataclasses import replace
+
+    repo = SqlAdaptationRepository(db_session)
+    proposed = repo.save(_adaptation(status=AdaptationStatus.PROPOSED), organization_id=1, user_id=2)
+    approved = repo.save(replace(proposed, status=AdaptationStatus.APPROVED), organization_id=1, user_id=2)
+    repo.save(replace(approved, status=AdaptationStatus.ADOPTED), organization_id=1, user_id=2)
+
+    history = repo.get_history(organization_id=1, user_id=2, adaptation_id=proposed.adaptation_id)
+    assert [h.status for h in history] == [AdaptationStatus.PROPOSED, AdaptationStatus.APPROVED, AdaptationStatus.ADOPTED]
+
+
+def test_adaptation_get_adopted_for_target(db_session):
+    repo = SqlAdaptationRepository(db_session)
+    target = AdaptationTarget(scope=AdaptationScope.MISSION, target_id="mission-1")
+    repo.save(_adaptation(scope=AdaptationScope.MISSION, target_id="mission-1", status=AdaptationStatus.ADOPTED), organization_id=1, user_id=2)
+    db_session.expire_all()
+
+    adopted = repo.get_adopted_for_target(organization_id=1, user_id=2, target=target)
+    assert adopted is not None
+    assert adopted.status == AdaptationStatus.ADOPTED
+
+
+def test_adaptation_list_active_excludes_terminal_statuses(db_session):
+    repo = SqlAdaptationRepository(db_session)
+    repo.save(_adaptation(status=AdaptationStatus.ADOPTED), organization_id=1, user_id=2)
+    repo.save(_adaptation(status=AdaptationStatus.REJECTED), organization_id=1, user_id=2)
+    repo.save(_adaptation(status=AdaptationStatus.SUPERSEDED), organization_id=1, user_id=2)
+
+    active = repo.list_active(organization_id=1, user_id=2)
+    assert len(active) == 1
+    assert active[0].status == AdaptationStatus.ADOPTED
+
+
+# --- real path (P7.10 §19): Pattern detection -> Adaptation lifecycle, entirely SQL-backed -----------
+
+
+def test_real_path_pattern_to_adopted_adaptation_and_back_via_a_fresh_session(db_session, db_engine):
+    """Exercises the actual application path, not internal functions in
+    isolation: real DailyIntent/EveningReflection evidence -> real
+    Pattern detection+confirmation (PatternDetectionFlow) -> real
+    Adaptation proposal+approval+adoption (AdaptationFlow) -> real
+    Experiment measurement link -> rollback - all against genuine SQL
+    persistence, with the final read coming from a completely fresh
+    database session (not the same Session's identity map)."""
+    intent_repo = InMemoryDailyIntentRepository()
+    evening_repo = InMemoryEveningReflectionRepository()
+    pattern_repo = SqlPatternRepository(db_session)
+    adaptation_repo = SqlAdaptationRepository(db_session)
+
+    org_id, user_id = 1, 7
+    for d in (1, 3, 5, 8):
+        day = date(2026, 7, d)
+        activity = PlannedActivity(description="Study transformers", focus_area="learning")
+        intent = DailyIntent(intent_date=day, stated_intention="Study transformers today", day_type=DayType.STUDY, planned_activities=(activity,))
+        intent_repo.save(intent, organization_id=org_id, user_id=user_id)
+        evidence = {activity.description: ReconciliationEvidence(explicitly_postponed=True, note="ran out of time")}
+        reflection = EveningReflection(reflection_date=day, accomplishments=(), evidence_by_activity_description=evidence)
+        reconciliations = reconcile_all((activity,), evidence)
+        evening_repo.save(reflection, reconciliations, organization_id=org_id, user_id=user_id, daily_intent_id=intent.intent_id)
+
+    pattern_flow = PatternDetectionFlow(intent_repo, evening_repo, pattern_repo)
+    pattern_flow.detect(organization_id=org_id, user_id=user_id, today=date(2026, 7, 15))
+    surfacing = pattern_flow.surface_next(organization_id=org_id, user_id=user_id)
+    confirmed = pattern_flow.respond(organization_id=org_id, user_id=user_id, pattern=surfacing.pattern, response=UserPatternResponse.CONFIRM)
+    recommendation = GrowthRecommendation(statement="Add a 50% buffer for learning activities.", responds_to=confirmed.possible_hypotheses[0])
+    with_recommendation = pattern_flow.attach_recommendation(organization_id=org_id, user_id=user_id, pattern=confirmed, recommendation=recommendation)
+
+    adaptation_flow = AdaptationFlow(adaptation_repo)
+    target = AdaptationTarget(scope=AdaptationScope.USER_PREFERENCE, target_id=str(user_id))
+    proposed = adaptation_flow.propose(with_recommendation, organization_id=org_id, user_id=user_id, target=target, expected_outcome="Fewer postponements")
+    under_eval = adaptation_flow.begin_evaluation(proposed, organization_id=org_id, user_id=user_id)
+    approved = adaptation_flow.approve(under_eval, organization_id=org_id, user_id=user_id, reason="Evidence is clear")
+    adopted = adaptation_flow.adopt(approved, organization_id=org_id, user_id=user_id)
+    assert adopted.status == AdaptationStatus.ADOPTED
+    db_session.commit()
+
+    # a completely fresh session, independent of the one that wrote everything above
+    from sqlalchemy.orm import sessionmaker
+
+    fresh_session = sessionmaker(bind=db_engine, autocommit=False, autoflush=False)()
+    fresh_adaptation_repo = SqlAdaptationRepository(fresh_session)
+    fresh_flow = AdaptationFlow(fresh_adaptation_repo)
+
+    rediscovered = fresh_flow.get_adopted(organization_id=org_id, user_id=user_id, target=target)
+    assert rediscovered is not None
+    assert rediscovered.adaptation_id == adopted.adaptation_id
+    assert rediscovered.pattern_id == with_recommendation.pattern_id
+
+    rolled_back = fresh_flow.rollback(rediscovered, organization_id=org_id, user_id=user_id, reason="the buffer made planning feel too rigid")
+    fresh_session.commit()
+    assert rolled_back.status == AdaptationStatus.ROLLED_BACK
+    assert fresh_flow.get_adopted(organization_id=org_id, user_id=user_id, target=target) is None
+
+    history = fresh_adaptation_repo.get_history(organization_id=org_id, user_id=user_id, adaptation_id=adopted.adaptation_id)
+    assert [h.status for h in history] == [
+        AdaptationStatus.PROPOSED, AdaptationStatus.UNDER_EVALUATION, AdaptationStatus.APPROVED, AdaptationStatus.ADOPTED, AdaptationStatus.ROLLED_BACK,
+    ]
+    fresh_session.close()

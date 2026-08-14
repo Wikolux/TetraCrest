@@ -21,6 +21,7 @@ from datetime import date, datetime
 
 from sqlalchemy.orm import Session
 
+from app.models.adaptation_record import AdaptationRecord
 from app.models.daily_intent_record import DailyIntentRecord
 from app.models.day_event_record import DayEventRecord
 from app.models.evening_reflection_record import EveningReflectionRecord
@@ -28,6 +29,7 @@ from app.models.experiment_record import ExperimentRecord
 from app.models.life_domain_state_record import LifeDomainStateRecord
 from app.models.mission_record import MissionRecord
 from app.models.pattern_record import PatternRecord
+from app.repositories.adaptation_record_repository import AdaptationRecordRepository
 from app.repositories.daily_intent_record_repository import DailyIntentRecordRepository
 from app.repositories.day_event_record_repository import DayEventRecordRepository
 from app.repositories.evening_reflection_record_repository import EveningReflectionRecordRepository
@@ -35,6 +37,8 @@ from app.repositories.experiment_record_repository import ExperimentRecordReposi
 from app.repositories.life_domain_state_record_repository import LifeDomainStateRecordRepository
 from app.repositories.mission_record_repository import MissionRecordRepository
 from app.repositories.pattern_record_repository import PatternRecordRepository
+from app.services.personal_os.adaptation import Adaptation, AdaptationTarget
+from app.services.personal_os.adaptation_repository import ACTIVE_ADAPTATION_STATUSES, AdaptationRepository
 from app.services.personal_os.daily_intent import DailyIntent, IntentField, PlannedActivity
 from app.services.personal_os.day_mode import DayMode
 from app.services.personal_os.evening import EveningReflection, EveningReflectionRepository
@@ -52,6 +56,8 @@ from app.services.personal_os.reasoning import GrowthRecommendation, Hypothesis,
 from app.services.personal_os.reconciliation import ReconciliationEvidence, ReconciliationRecord
 from app.services.personal_os.repository import DailyIntentRepository
 from app.services.personal_os.shared.types import (
+    AdaptationScope,
+    AdaptationStatus,
     AutonomyAction,
     Confidence,
     DayEventType,
@@ -838,4 +844,78 @@ class SqlDayEventRepository(DayEventRepository):
             occurred_at=occurred_at,
             sequence=record.sequence,
             event_id=str(record.id),
+        )
+
+
+# --- Adaptation (P7.10) --------------------------------------------------------------------------
+
+
+class SqlAdaptationRepository(AdaptationRepository):
+    """Mirrors SqlExperimentRepository's own shape exactly - a real,
+    stable adaptation_id (generated once, at the first save) stored in
+    its own indexed column and reused across every later lifecycle
+    version, since a user may have many concurrent or historical
+    adaptations across all four scopes."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self._records = AdaptationRecordRepository(db)
+
+    def save(self, adaptation: Adaptation, *, organization_id: int, user_id: int) -> Adaptation:
+        from uuid import uuid4
+
+        adaptation_id = adaptation.adaptation_id or str(uuid4())
+        record = AdaptationRecord(
+            organization_id=organization_id,
+            user_id=user_id,
+            adaptation_id=adaptation_id,
+            scope=adaptation.target.scope.value,
+            target_id=adaptation.target.target_id,
+            pattern_id=adaptation.pattern_id,
+            confidence=adaptation.confidence.value,
+            expected_outcome=adaptation.expected_outcome,
+            experiment_id=adaptation.experiment_id,
+            status=adaptation.status.value,
+            supersedes_adaptation_id=adaptation.supersedes_adaptation_id,
+            decision_reason=adaptation.decision_reason,
+        )
+        self._records.create(record)
+        return self._to_domain(record)
+
+    def get_latest(self, *, organization_id: int, user_id: int, adaptation_id: str) -> Adaptation | None:
+        record = self._records.get_latest_by_adaptation_id(organization_id, user_id, adaptation_id)
+        return self._to_domain(record) if record else None
+
+    def get_history(self, *, organization_id: int, user_id: int, adaptation_id: str) -> tuple[Adaptation, ...]:
+        records = self._records.list_history(organization_id, user_id, adaptation_id)
+        return tuple(self._to_domain(record) for record in records)
+
+    def list_active(self, *, organization_id: int, user_id: int) -> tuple[Adaptation, ...]:
+        records = self._records.list_latest_per_adaptation(organization_id, user_id)
+        adaptations = [self._to_domain(record) for record in records]
+        active = [a for a in adaptations if a.status in ACTIVE_ADAPTATION_STATUSES]
+        return tuple(sorted(active, key=lambda a: a.created_at))
+
+    def get_adopted_for_target(self, *, organization_id: int, user_id: int, target: AdaptationTarget) -> Adaptation | None:
+        for adaptation in self.list_active(organization_id=organization_id, user_id=user_id):
+            if adaptation.status == AdaptationStatus.ADOPTED and adaptation.target == target:
+                return adaptation
+        return None
+
+    @staticmethod
+    def _to_domain(record: AdaptationRecord) -> Adaptation:
+        created_at = record.created_at if isinstance(record.created_at, datetime) else datetime.fromisoformat(str(record.created_at))
+        updated_at = record.updated_at if isinstance(record.updated_at, datetime) else datetime.fromisoformat(str(record.updated_at))
+        return Adaptation(
+            adaptation_id=record.adaptation_id,
+            target=AdaptationTarget(scope=AdaptationScope(record.scope), target_id=record.target_id),
+            pattern_id=record.pattern_id,
+            confidence=Confidence(record.confidence),
+            expected_outcome=record.expected_outcome,
+            experiment_id=record.experiment_id,
+            status=AdaptationStatus(record.status),
+            supersedes_adaptation_id=record.supersedes_adaptation_id,
+            decision_reason=record.decision_reason,
+            created_at=created_at,
+            updated_at=updated_at,
         )

@@ -60,6 +60,9 @@ _PERSONAL_OS_MODULES = (
     "app.services.personal_os.living_day_repository",
     "app.services.personal_os.living_day_interaction",
     "app.services.personal_os.living_day_flow",
+    "app.services.personal_os.adaptation",
+    "app.services.personal_os.adaptation_repository",
+    "app.services.personal_os.adaptation_flow",
 )
 
 _FORBIDDEN_SPECIALIST_FRAGMENTS = (
@@ -146,6 +149,7 @@ def test_personal_os_mints_no_new_memory_framework_namespace():
         "app.services.personal_os.life_domain_repository",
         "app.services.personal_os.mission_repository",
         "app.services.personal_os.living_day_repository",
+        "app.services.personal_os.adaptation_repository",
     ):
         source = inspect.getsource(importlib.import_module(module_path))
         assert ".remember(" not in source, f"{module_path} calls .remember() - unexpected AgentMemory write"
@@ -308,6 +312,83 @@ def test_living_day_makes_no_calendar_or_scheduling_assumption():
         forbidden_fragments = ("import calendar", "google.calendar", "outlook", "icalendar", "caldav")
         for fragment in forbidden_fragments:
             assert fragment not in source.lower(), f"{module_path} references {fragment!r} - no calendar assumption is permitted in P6"
+
+
+def test_adaptation_flow_only_reaches_the_runtime_through_runtime_adapter():
+    """P7.10's own narration step (present(), explaining an already-
+    decided proposal) must follow the same seam every other Personal OS
+    flow already uses - no second, ad hoc Runtime invocation path."""
+    imported = _imported_modules("app.services.personal_os.adaptation_flow")
+    assert any(name == "app.services.ai.agents.specialists.runtime_adapter" for name in imported)
+    assert not any(name == "app.services.ai.runtime.runtime" for name in imported)
+
+
+def test_adaptation_and_adaptation_repository_do_not_touch_the_runtime():
+    """P7.10 §18: the adaptation domain model and its persistence must
+    stay entirely deterministic - status transitions and lifecycle rules
+    are plain state machines, never influenced by a generative call."""
+    for module_path in ("app.services.personal_os.adaptation", "app.services.personal_os.adaptation_repository"):
+        imported = _imported_modules(module_path)
+        assert not any("runtime_adapter" in name or "prompt_builder" in name for name in imported), (
+            f"{module_path} imports a Runtime/PromptBuilder seam - this module must remain deterministic"
+        )
+
+
+def test_adaptation_reuses_pattern_and_experiment_never_redefines_evidence_or_measurement():
+    """P7.10's own Design Question 1/2 resolution, verified structurally:
+    Adaptation composes Pattern (evidence/hypothesis/recommendation) and
+    Experiment (measurement) by reference (pattern_id/experiment_id) -
+    it must import their real types, and must never redefine its own
+    ObservedFact/InferredPattern/Hypothesis/GrowthRecommendation/
+    ExperimentBaseline/ExperimentComparison-shaped class."""
+    for module_path in ("app.services.personal_os.adaptation", "app.services.personal_os.adaptation_flow"):
+        source = inspect.getsource(importlib.import_module(module_path))
+        forbidden_class_defs = (
+            "class ObservedFact", "class InferredPattern", "class Hypothesis", "class GrowthRecommendation",
+            "class ExperimentBaseline", "class ExperimentMeasurement", "class ExperimentComparison",
+            "class PatternEvidenceItem",
+        )
+        for fragment in forbidden_class_defs:
+            assert fragment not in source, f"{module_path} redefines {fragment!r} - evidence/measurement must be reused from Pattern/Experiment, never duplicated"
+
+    flow_source = inspect.getsource(importlib.import_module("app.services.personal_os.adaptation_flow"))
+    assert "from app.services.personal_os.pattern import Pattern" in flow_source
+    assert "from app.services.personal_os.experiment import Experiment" in flow_source
+
+
+def test_no_second_learning_or_adaptation_engine_exists():
+    """The build brief's own explicit prohibition: no
+    learning_engine/adaptation_engine/self_improvement_engine package,
+    and no second copy of the Pattern/Experiment detection or
+    measurement machinery anywhere under personal_os/."""
+    import app.services.personal_os as personal_os_package
+
+    package_dir = Path(personal_os_package.__file__).resolve().parent
+    forbidden_names = ("learning_engine.py", "adaptation_engine.py", "self_improvement_engine.py", "learning_engine", "adaptation_engine")
+    existing_names = {p.name for p in package_dir.iterdir()}
+    for forbidden in forbidden_names:
+        assert forbidden not in existing_names, f"a competing engine module/package {forbidden!r} exists - adaptation.py/adaptation_flow.py must be the only home for this concern"
+
+
+def test_adaptation_scope_cannot_represent_governed_configuration():
+    """P7.10 §10 (hard boundary): ordinary adaptation must never be able
+    to claim authority over authorization, security, tenant isolation,
+    tool permissions, or platform governance. Enforced structurally -
+    AdaptationScope is a closed enum with exactly four members, and none
+    of them, nor AdaptationTarget's own shape, mention any of these."""
+    from app.services.personal_os.shared.types import AdaptationScope
+
+    scope_values = {s.value for s in AdaptationScope}
+    assert scope_values == {"user", "user_preference", "mission", "workflow"}
+
+    for module_path in ("app.services.personal_os.adaptation", "app.services.personal_os.adaptation_flow", "app.services.personal_os.adaptation_repository"):
+        source = inspect.getsource(importlib.import_module(module_path))
+        forbidden_fragments = (
+            "import security", "from security", "TenantMiddleware", "eval(", "exec(",
+            "subprocess", "importlib.reload", "os.system", "AgentCapability.", "SpecialistRegistry.register",
+        )
+        for fragment in forbidden_fragments:
+            assert fragment not in source, f"{module_path} contains {fragment!r} - adaptation must never touch governed configuration or execute arbitrary code"
 
 
 def test_personal_os_package_lives_outside_the_frozen_ai_operating_system():

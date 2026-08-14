@@ -382,3 +382,56 @@ class DayInteractionOutcome(StrEnum):
     CLARIFICATION_NEEDED = "clarification_needed"
     STATUS_QUERY = "status_query"
     UNRECOGNIZED = "unrecognized"
+
+
+class AdaptationScope(StrEnum):
+    """P7.10 §1 - the four scopes within Personal OS's own boundary that
+    a controlled adaptation may affect. Deliberately closed and
+    deliberately NOT extended with anything resembling AGENT_BEHAVIOR,
+    CAPABILITY, or ORGANIZATION_POLICY (those are explicitly deferred -
+    they describe a Capability Pack specialist's own behavior or
+    organization-wide policy, which Personal OS has no architectural
+    standing to read or adapt; see adaptation.py's own module docstring)
+    - and NOT extended with anything resembling authorization, security,
+    tenant isolation, tool permissions, or governance, which must never
+    be reachable through ordinary adaptation at all (P7.10 §10). This
+    closed enum is itself part of that guarantee: an AdaptationTarget
+    literally cannot be constructed with a scope this module does not
+    name, so "adaptation cannot touch governed configuration" is true by
+    construction, not merely by convention - verified by
+    test_personal_os_architecture.py."""
+
+    USER = "user"
+    USER_PREFERENCE = "user_preference"
+    MISSION = "mission"
+    WORKFLOW = "workflow"
+
+
+class AdaptationStatus(StrEnum):
+    """An Adaptation's own lifecycle (P7.10 §5) - distinct from both
+    Pattern's confirmation lifecycle (OBSERVED.../CONFIRMED/DISMISSED)
+    and Experiment's measurement lifecycle (PROPOSED/ACTIVE/REVIEWED) -
+    this is the lifecycle of ADOPTING a change into how Personal OS
+    behaves for one scoped target, which neither of those existing
+    lifecycles represents on its own.
+
+    Valid transitions (enforced in adaptation_flow.py, not just named
+    here): PROPOSED -> UNDER_EVALUATION | REJECTED; UNDER_EVALUATION ->
+    APPROVED | REJECTED; APPROVED -> ADOPTED | REJECTED; ADOPTED ->
+    ROLLED_BACK | SUPERSEDED. SUPERSEDED serves both RELEARN (a newer,
+    approved Adaptation replaces this one - §8) and pure UNLEARN (this
+    one is explicitly retired with no replacement - §7) - both mean the
+    identical thing operationally: "no longer treat this as current or
+    adopted, but never delete the record" - the same distinction
+    Pattern's own SUPERSEDED status already draws. Every transition is a
+    new persisted version under the same adaptation_id (append-only,
+    matching Experiment's own convention) - full lifecycle history is
+    always retrievable, never overwritten."""
+
+    PROPOSED = "proposed"
+    UNDER_EVALUATION = "under_evaluation"
+    APPROVED = "approved"
+    ADOPTED = "adopted"
+    REJECTED = "rejected"
+    ROLLED_BACK = "rolled_back"
+    SUPERSEDED = "superseded"
