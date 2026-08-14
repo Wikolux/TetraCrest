@@ -328,3 +328,57 @@ class AutonomyAction(StrEnum):
     ASK = "ask"
     RESERVE = "reserve"
     EXECUTE = "execute"
+
+
+class DayEventType(StrEnum):
+    """The nine capabilities P6.1 names, as a closed, append-only event
+    vocabulary - one DayEvent is one real thing that happened, never a
+    whole-day snapshot. living_day.py's reconstruct() folds a sequence of
+    these, in order, into the current LivingDayState; the events
+    themselves are never edited or replaced, only appended to (the same
+    append-only discipline every durable Personal OS record already
+    follows, applied here to discrete facts rather than whole-object
+    versions, since a day is a sequence of things that happened, not one
+    entity with a single evolving status)."""
+
+    ACTIVITY_ADDED = "activity_added"
+    ACTIVITY_COMPLETED = "activity_completed"
+    ACTIVITY_POSTPONED = "activity_postponed"
+    ACTIVITY_HELD = "activity_held"
+    ACTIVITY_RESUMED = "activity_resumed"
+    ACTIVITY_REMOVED = "activity_removed"
+    UNEXPECTED_EVENT = "unexpected_event"
+    AVAILABLE_TIME_CHANGED = "available_time_changed"
+    DAY_MODE_CHANGED = "day_mode_changed"
+
+
+class LivingActivityStatus(StrEnum):
+    """One LivingActivity's own current status, derived by folding its
+    own events (P6.1) - HELD is deliberately distinct from POSTPONED:
+    HELD means "paused today, expected to resume today" (RESUMED reverses
+    it); POSTPONED means "deferred to another day" (P6.3's own "postponed
+    work is not incorrectly resurfaced as today's active work" - a
+    POSTPONED activity stays out of today's candidates unless the user
+    explicitly re-adds or resumes it)."""
+
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    POSTPONED = "postponed"
+    HELD = "held"
+    REMOVED = "removed"
+
+
+class DayInteractionOutcome(StrEnum):
+    """What one natural-language statement to the Living Day resolved to
+    (P6.4) - a closed vocabulary so a caller never has to guess which
+    fields of DayInteractionResult are meaningful. STATUS_QUERY and
+    UNRECOGNIZED both carry zero events by construction - a status query
+    is read-only (P6.4's own explicit "must not create a new persisted
+    state/version when nothing changed"), and an unrecognized statement
+    is never guessed into an event (P6.4's own "if a statement is
+    ambiguous, do not guess")."""
+
+    EVENTS_RECORDED = "events_recorded"
+    CLARIFICATION_NEEDED = "clarification_needed"
+    STATUS_QUERY = "status_query"
+    UNRECOGNIZED = "unrecognized"

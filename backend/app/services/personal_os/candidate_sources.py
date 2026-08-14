@@ -15,6 +15,7 @@ at CandidateItem's own honest default (0.0), never guessed.
 
 from app.services.personal_os.daily_intent import DailyIntent
 from app.services.personal_os.experiment import Experiment
+from app.services.personal_os.living_day import LivingDayState
 from app.services.personal_os.mission import Mission
 from app.services.personal_os.pattern import Pattern
 from app.services.personal_os.priority import CandidateItem
@@ -38,6 +39,38 @@ def _domain_from_focus_area(focus_area: str) -> LifeDomain | None:
     §26/§28 rule out; an unmapped focus_area simply yields domain=None,
     honestly)."""
     return LifeDomain(focus_area) if focus_area in _DOMAIN_VALUES else None
+
+
+def from_living_day_state(state: LivingDayState) -> tuple[CandidateItem, ...]:
+    """P6.2: the living day's own ACTIVE activities, superseding
+    from_daily_intent() once the day has actually started evolving - a
+    caller with a LivingDayState uses this instead of (never in addition
+    to) from_daily_intent(), since every morning-seeded activity is
+    already folded into state.activities (living_day.reconstruct()'s own
+    job). COMPLETED/POSTPONED/HELD/REMOVED activities are deliberately
+    excluded (P6.3's own "postponed work is not incorrectly resurfaced,"
+    "completed work is not recommended again"): they still exist in
+    state.activities for history and reporting, just not as something
+    left to prioritize. Unexpected-event-originated activities are also
+    excluded here - reconstruct() itself always records an
+    UNEXPECTED_EVENT as COMPLETED (an event that already happened is not
+    a candidate for future ranking; its only effect on priority is the
+    available-time reduction that separately already happened), so
+    state.active_activities already excludes every unexpected-event
+    activity without this module needing its own second check."""
+    return tuple(
+        CandidateItem(
+            item_id=activity.activity_id,
+            description=activity.description,
+            domain=activity.domain,
+            deadline=activity.deadline,
+            is_current_intent=True,
+            estimated_hours=activity.estimated_hours,
+            source="living_day",
+            source_id=activity.activity_id,
+        )
+        for activity in state.active_activities
+    )
 
 
 def from_daily_intent(intent: DailyIntent) -> tuple[CandidateItem, ...]:

@@ -56,6 +56,10 @@ _PERSONAL_OS_MODULES = (
     "app.services.personal_os.priority",
     "app.services.personal_os.candidate_sources",
     "app.services.personal_os.priority_flow",
+    "app.services.personal_os.living_day",
+    "app.services.personal_os.living_day_repository",
+    "app.services.personal_os.living_day_interaction",
+    "app.services.personal_os.living_day_flow",
 )
 
 _FORBIDDEN_SPECIALIST_FRAGMENTS = (
@@ -141,6 +145,7 @@ def test_personal_os_mints_no_new_memory_framework_namespace():
         "app.services.personal_os.experiment_repository",
         "app.services.personal_os.life_domain_repository",
         "app.services.personal_os.mission_repository",
+        "app.services.personal_os.living_day_repository",
     ):
         source = inspect.getsource(importlib.import_module(module_path))
         assert ".remember(" not in source, f"{module_path} calls .remember() - unexpected AgentMemory write"
@@ -251,6 +256,58 @@ def test_no_duplicate_task_or_repository_mechanism_for_missions():
     source = inspect.getsource(importlib.import_module("app.services.personal_os.mission"))
     assert "class Task" not in source
     assert "TaskRepository" not in source
+
+
+def test_living_day_flow_only_reaches_the_runtime_through_runtime_adapter():
+    """P6.2's own narration step (present_replan(), reusing
+    PriorityIntelligenceFlow.present()) must not introduce a second
+    Runtime invocation path - living_day_flow.py itself never even needs
+    to import RuntimeAdapter directly, since it delegates narration
+    entirely to priority_flow.py; this test proves that delegation
+    rather than assuming it."""
+    imported = _imported_modules("app.services.personal_os.living_day_flow")
+    assert not any(name == "app.services.ai.runtime.runtime" for name in imported)
+    assert not any("prompt_builder" in name for name in imported), (
+        "living_day_flow.py imports PromptBuilder directly - narration must stay delegated to priority_flow.py, never duplicated"
+    )
+
+
+def test_living_day_and_living_day_interaction_do_not_touch_the_runtime():
+    """P6.1/P6.4: reconstruct() and the heuristic interpreter must both
+    stay deterministic - reconstructing a day's state from its event log,
+    and classifying a user statement into events, are both pure
+    computations this milestone requires stay inspectable and repeatable,
+    never influenced by a generative call."""
+    for module_path in ("app.services.personal_os.living_day", "app.services.personal_os.living_day_interaction"):
+        imported = _imported_modules(module_path)
+        assert not any("runtime_adapter" in name or "prompt_builder" in name for name in imported), (
+            f"{module_path} imports a Runtime/PromptBuilder seam - this module must remain deterministic"
+        )
+
+
+def test_living_day_flow_reuses_rank_candidates_never_a_second_priority_algorithm():
+    """P6.2's own explicit 'do not create a second priority algorithm' -
+    verified structurally: living_day_flow.py's replan() must call
+    priority.rank_candidates(), never redefine its own scoring/ranking
+    logic."""
+    source = inspect.getsource(importlib.import_module("app.services.personal_os.living_day_flow"))
+    assert "rank_candidates(" in source
+    assert "def calculate_score" not in source
+    assert "def rank_candidates" not in source
+
+
+def test_living_day_makes_no_calendar_or_scheduling_assumption():
+    """The build brief's own explicit boundary: 'not assume a Calendar
+    exists,' 'not assume the user has scheduled plans,' 'not assume
+    weekdays/weekends have fixed behavior.' Verified structurally: no
+    calendar/scheduling library import anywhere in the Living Day
+    modules, and DailyIntent (P6.1's own required 'original morning
+    intent') stays optional everywhere it is consumed."""
+    for module_path in ("app.services.personal_os.living_day", "app.services.personal_os.living_day_flow", "app.services.personal_os.living_day_interaction"):
+        source = inspect.getsource(importlib.import_module(module_path))
+        forbidden_fragments = ("import calendar", "google.calendar", "outlook", "icalendar", "caldav")
+        for fragment in forbidden_fragments:
+            assert fragment not in source.lower(), f"{module_path} references {fragment!r} - no calendar assumption is permitted in P6"
 
 
 def test_personal_os_package_lives_outside_the_frozen_ai_operating_system():

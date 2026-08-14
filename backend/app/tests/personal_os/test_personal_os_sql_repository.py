@@ -7,9 +7,11 @@ not merely that an in-memory dict does."""
 from datetime import date
 
 from app.services.personal_os.daily_intent import DailyIntent, IntentField, PlannedActivity
+from app.services.personal_os.day_mode import DayMode
 from app.services.personal_os.evening import EveningReflection
 from app.services.personal_os.experiment import Experiment, ExperimentBaseline
 from app.services.personal_os.life_domain import default_state
+from app.services.personal_os.living_day import DayEvent, reconstruct
 from app.services.personal_os.mission import AutonomyGrant, Mission
 from app.services.personal_os.pattern import Pattern, PatternEvidenceItem
 from app.services.personal_os.reasoning import GrowthRecommendation, Hypothesis, InferredPattern, ObservedFact, UserExplanation
@@ -17,6 +19,8 @@ from app.services.personal_os.reconciliation import ReconciliationEvidence, reco
 from app.services.personal_os.shared.types import (
     AutonomyAction,
     Confidence,
+    DayEventType,
+    DayModeKind,
     DayType,
     ExperimentStatus,
     ExperimentUserDecision,
@@ -29,6 +33,7 @@ from app.services.personal_os.shared.types import (
 )
 from app.services.personal_os.sql_repository import (
     SqlDailyIntentRepository,
+    SqlDayEventRepository,
     SqlEveningReflectionRepository,
     SqlExperimentRepository,
     SqlLifeDomainStateRepository,
@@ -554,3 +559,75 @@ def test_mission_list_active_excludes_completed_and_cancelled(db_session):
     active = repo.list_active(organization_id=1, user_id=2)
     assert len(active) == 1
     assert active[0].status == MissionStatus.ACTIVE
+
+
+# --- DayEvent (P6.1): durable append-only event log --------------------------------------------
+
+
+def test_day_event_append_assigns_sequential_sequence_numbers(db_session):
+    repo = SqlDayEventRepository(db_session)
+    e1 = repo.append(DayEvent(event_type=DayEventType.ACTIVITY_ADDED, activity_id="a1", description="Buy a gift"), organization_id=1, user_id=2, day_date=date(2026, 8, 14))
+    e2 = repo.append(DayEvent(event_type=DayEventType.ACTIVITY_COMPLETED, activity_id="a1"), organization_id=1, user_id=2, day_date=date(2026, 8, 14))
+    assert e1.sequence == 1
+    assert e2.sequence == 2
+
+
+def test_day_event_round_trips_all_payload_shapes(db_session):
+    repo = SqlDayEventRepository(db_session)
+    day = date(2026, 8, 14)
+    repo.append(DayEvent(event_type=DayEventType.ACTIVITY_ADDED, activity_id="a1", description="Buy a gift", domain=LifeDomain.FAMILY, deadline=date(2026, 8, 20), estimated_hours=1.5), organization_id=1, user_id=2, day_date=day)
+    repo.append(DayEvent(event_type=DayEventType.UNEXPECTED_EVENT, activity_id="m1", description="Meeting", estimated_hours=2.0), organization_id=1, user_id=2, day_date=day)
+    repo.append(DayEvent(event_type=DayEventType.AVAILABLE_TIME_CHANGED, available_hours=6.0), organization_id=1, user_id=2, day_date=day)
+    repo.append(DayEvent(event_type=DayEventType.DAY_MODE_CHANGED, day_mode=DayMode(kind=DayModeKind.FAMILY_FOCUSED)), organization_id=1, user_id=2, day_date=day)
+    repo.append(DayEvent(event_type=DayEventType.ACTIVITY_COMPLETED, activity_id="a1", reason="done"), organization_id=1, user_id=2, day_date=day)
+    db_session.expire_all()
+
+    events = repo.list_for_day(organization_id=1, user_id=2, day_date=day)
+    assert len(events) == 5
+    assert events[0].domain == LifeDomain.FAMILY
+    assert events[0].deadline == date(2026, 8, 20)
+    assert events[0].estimated_hours == 1.5
+    assert events[2].available_hours == 6.0
+    assert events[3].day_mode.kind == DayModeKind.FAMILY_FOCUSED
+    assert events[4].reason == "done"
+
+
+def test_day_event_survives_a_fresh_session(db_engine):
+    from sqlalchemy.orm import sessionmaker
+
+    SessionLocal = sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
+    session1 = SessionLocal()
+    SqlDayEventRepository(session1).append(DayEvent(event_type=DayEventType.ACTIVITY_ADDED, activity_id="a1", description="Buy a gift"), organization_id=1, user_id=2, day_date=date(2026, 8, 14))
+    session1.commit()
+    session1.close()
+
+    session2 = SessionLocal()
+    events = SqlDayEventRepository(session2).list_for_day(organization_id=1, user_id=2, day_date=date(2026, 8, 14))
+    assert len(events) == 1
+    assert events[0].description == "Buy a gift"
+    session2.close()
+
+
+def test_day_event_reconstructs_correctly_from_durable_storage(db_session):
+    repo = SqlDayEventRepository(db_session)
+    day = date(2026, 8, 14)
+    intent = DailyIntent(intent_date=day, stated_intention="x", day_type=DayType.MIXED, planned_activities=(PlannedActivity(description="Build Tetra Crest"),))
+    from app.services.personal_os.living_day import intent_activity_id
+
+    activity_id = intent_activity_id(day, "Build Tetra Crest")
+    repo.append(DayEvent(event_type=DayEventType.ACTIVITY_COMPLETED, activity_id=activity_id, reason="finished it"), organization_id=1, user_id=2, day_date=day)
+    db_session.expire_all()
+
+    events = repo.list_for_day(organization_id=1, user_id=2, day_date=day)
+    state = reconstruct(intent, events, day_date=day)
+    assert state.find(activity_id).status.value == "completed"
+    assert state.find(activity_id).last_reason == "finished it"
+
+
+def test_day_event_scoped_by_organization_and_user(db_session):
+    repo = SqlDayEventRepository(db_session)
+    day = date(2026, 8, 14)
+    repo.append(DayEvent(event_type=DayEventType.ACTIVITY_ADDED, activity_id="a1", description="x"), organization_id=1, user_id=2, day_date=day)
+    repo.append(DayEvent(event_type=DayEventType.ACTIVITY_ADDED, activity_id="a1", description="x"), organization_id=1, user_id=99, day_date=day)
+
+    assert len(repo.list_for_day(organization_id=1, user_id=2, day_date=day)) == 1

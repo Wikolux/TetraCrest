@@ -105,6 +105,20 @@ class PriorityIntelligenceFlow:
         if intent is not None:
             candidates.extend(from_daily_intent(intent))
 
+        candidates.extend(self.gather_non_intent_candidates(organization_id=organization_id, user_id=user_id))
+        return tuple(candidates)
+
+    def gather_non_intent_candidates(self, *, organization_id: int, user_id: int) -> tuple[CandidateItem, ...]:
+        """Missions/Patterns/Experiments only - factored out of
+        gather_candidates() (P6.2) so a caller with its own, richer
+        notion of "today's activities" (living_day_flow.py's own
+        LivingDayState, which supersedes plain DailyIntent once a day
+        starts evolving) can still reuse this exact same candidate
+        gathering for everything else, without re-querying three
+        repositories itself or risking the two candidate sets silently
+        drifting apart."""
+        candidates: list[CandidateItem] = []
+
         missions = self.mission_repository.list_active(organization_id=organization_id, user_id=user_id)
         candidates.extend(from_missions(missions))
 

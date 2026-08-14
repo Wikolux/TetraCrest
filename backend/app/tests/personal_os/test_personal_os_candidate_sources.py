@@ -4,13 +4,14 @@ repository, never invented content."""
 
 from datetime import date
 
-from app.services.personal_os.candidate_sources import from_daily_intent, from_experiments, from_missions, from_pattern_recommendations
+from app.services.personal_os.candidate_sources import from_daily_intent, from_experiments, from_living_day_state, from_missions, from_pattern_recommendations
 from app.services.personal_os.daily_intent import DailyIntent, PlannedActivity
 from app.services.personal_os.experiment import Experiment, ExperimentBaseline
+from app.services.personal_os.living_day import DayEvent, reconstruct
 from app.services.personal_os.mission import Mission
 from app.services.personal_os.pattern import Pattern, PatternEvidenceItem
 from app.services.personal_os.reasoning import GrowthRecommendation, Hypothesis, InferredPattern, ObservedFact
-from app.services.personal_os.shared.types import Confidence, DayType, ExperimentStatus, LifeDomain, MissionStatus, PatternStatus, PatternType
+from app.services.personal_os.shared.types import Confidence, DayEventType, DayType, ExperimentStatus, LifeDomain, MissionStatus, PatternStatus, PatternType
 
 TODAY = date(2026, 8, 13)
 
@@ -109,3 +110,37 @@ def test_from_experiments_only_includes_ready_for_review():
     items = from_experiments((ready, active))
     assert len(items) == 1
     assert "Add a buffer" in items[0].description
+
+
+# --- from_living_day_state (P6.2) ---------------------------------------------------------------
+
+
+def test_from_living_day_state_includes_only_active_activities():
+    intent = DailyIntent(intent_date=TODAY, stated_intention="x", day_type=DayType.MIXED, planned_activities=(PlannedActivity(description="Build Tetra"),))
+    activity_id = f"intent:{TODAY.isoformat()}:Build Tetra"
+    events = (DayEvent(event_type=DayEventType.ACTIVITY_COMPLETED, activity_id=activity_id, sequence=1),)
+    state = reconstruct(intent, events, day_date=TODAY)
+    assert from_living_day_state(state) == ()
+
+
+def test_from_living_day_state_marks_items_as_current_intent():
+    intent = DailyIntent(intent_date=TODAY, stated_intention="x", day_type=DayType.MIXED, planned_activities=(PlannedActivity(description="Build Tetra"),))
+    state = reconstruct(intent, (), day_date=TODAY)
+    items = from_living_day_state(state)
+    assert len(items) == 1
+    assert items[0].is_current_intent is True
+
+
+def test_from_living_day_state_excludes_unexpected_events():
+    events = (DayEvent(event_type=DayEventType.UNEXPECTED_EVENT, activity_id="m1", description="Meeting", sequence=1),)
+    state = reconstruct(None, events, day_date=TODAY)
+    assert from_living_day_state(state) == ()
+
+
+def test_from_living_day_state_includes_mid_day_additions():
+    events = (DayEvent(event_type=DayEventType.ACTIVITY_ADDED, activity_id="a1", description="Buy a gift", sequence=1),)
+    state = reconstruct(None, events, day_date=TODAY)
+    items = from_living_day_state(state)
+    assert len(items) == 1
+    assert items[0].description == "Buy a gift"
+    assert items[0].source == "living_day"

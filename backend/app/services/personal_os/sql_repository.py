@@ -22,23 +22,28 @@ from datetime import date, datetime
 from sqlalchemy.orm import Session
 
 from app.models.daily_intent_record import DailyIntentRecord
+from app.models.day_event_record import DayEventRecord
 from app.models.evening_reflection_record import EveningReflectionRecord
 from app.models.experiment_record import ExperimentRecord
 from app.models.life_domain_state_record import LifeDomainStateRecord
 from app.models.mission_record import MissionRecord
 from app.models.pattern_record import PatternRecord
 from app.repositories.daily_intent_record_repository import DailyIntentRecordRepository
+from app.repositories.day_event_record_repository import DayEventRecordRepository
 from app.repositories.evening_reflection_record_repository import EveningReflectionRecordRepository
 from app.repositories.experiment_record_repository import ExperimentRecordRepository
 from app.repositories.life_domain_state_record_repository import LifeDomainStateRecordRepository
 from app.repositories.mission_record_repository import MissionRecordRepository
 from app.repositories.pattern_record_repository import PatternRecordRepository
 from app.services.personal_os.daily_intent import DailyIntent, IntentField, PlannedActivity
+from app.services.personal_os.day_mode import DayMode
 from app.services.personal_os.evening import EveningReflection, EveningReflectionRepository
 from app.services.personal_os.experiment import Experiment, ExperimentBaseline, ExperimentComparison, ExperimentMeasurement
 from app.services.personal_os.experiment_repository import ACTIVE_EXPERIMENT_STATUSES, ExperimentRepository
 from app.services.personal_os.life_domain import LifeDomainState
 from app.services.personal_os.life_domain_repository import LifeDomainStateRepository
+from app.services.personal_os.living_day import DayEvent
+from app.services.personal_os.living_day_repository import DayEventRepository
 from app.services.personal_os.mission import AutonomyGrant, Mission
 from app.services.personal_os.mission_repository import ACTIVE_MISSION_STATUSES, MissionRepository
 from app.services.personal_os.pattern import Pattern, PatternEvidenceItem
@@ -49,6 +54,8 @@ from app.services.personal_os.repository import DailyIntentRepository
 from app.services.personal_os.shared.types import (
     AutonomyAction,
     Confidence,
+    DayEventType,
+    DayModeKind,
     DayType,
     ExperimentOutcome,
     ExperimentStatus,
@@ -763,4 +770,72 @@ class SqlMissionRepository(MissionRepository):
             supersedes_mission_id=record.supersedes_mission_id,
             created_at=created_at,
             updated_at=updated_at,
+        )
+
+
+# --- DayEvent (P6.1) --------------------------------------------------------------------------
+
+
+class SqlDayEventRepository(DayEventRepository):
+    """The durable event log - append() always INSERTs, never UPDATEs;
+    sequence numbers are computed from the current max in the database
+    for that (organization, user, day) key, so ordering survives a
+    process restart exactly the way InMemoryDayEventRepository's own
+    in-process counter does within one run."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self._records = DayEventRecordRepository(db)
+
+    def append(self, event: DayEvent, *, organization_id: int, user_id: int, day_date: date) -> DayEvent:
+        sequence = self._records.get_max_sequence(organization_id, user_id, day_date) + 1
+        day_mode = event.day_mode
+        record = DayEventRecord(
+            organization_id=organization_id,
+            user_id=user_id,
+            day_date=day_date,
+            sequence=sequence,
+            event_type=event.event_type.value,
+            activity_id=event.activity_id,
+            description=event.description,
+            domain=event.domain.value if event.domain else None,
+            deadline=event.deadline,
+            estimated_hours=event.estimated_hours,
+            reason=event.reason,
+            available_hours=event.available_hours,
+            day_mode_kind=day_mode.kind.value if day_mode else None,
+            day_mode_custom_label=day_mode.custom_label if day_mode else None,
+            day_mode_stated_by_user=day_mode.stated_by_user if day_mode else None,
+            occurred_at=event.occurred_at,
+        )
+        self._records.create(record)
+        return self._to_domain(record)
+
+    def list_for_day(self, *, organization_id: int, user_id: int, day_date: date) -> tuple[DayEvent, ...]:
+        records = self._records.list_for_day(organization_id, user_id, day_date)
+        return tuple(self._to_domain(record) for record in records)
+
+    @staticmethod
+    def _to_domain(record: DayEventRecord) -> DayEvent:
+        occurred_at = record.occurred_at if isinstance(record.occurred_at, datetime) else datetime.fromisoformat(str(record.occurred_at))
+        day_mode = None
+        if record.day_mode_kind:
+            day_mode = DayMode(
+                kind=DayModeKind(record.day_mode_kind),
+                custom_label=record.day_mode_custom_label or "",
+                stated_by_user=bool(record.day_mode_stated_by_user),
+            )
+        return DayEvent(
+            event_type=DayEventType(record.event_type),
+            activity_id=record.activity_id,
+            description=record.description,
+            domain=LifeDomain(record.domain) if record.domain else None,
+            deadline=record.deadline,
+            estimated_hours=record.estimated_hours,
+            reason=record.reason,
+            available_hours=record.available_hours,
+            day_mode=day_mode,
+            occurred_at=occurred_at,
+            sequence=record.sequence,
+            event_id=str(record.id),
         )

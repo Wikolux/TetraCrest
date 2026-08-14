@@ -14,6 +14,7 @@ from app.models.pattern_record import PatternRecord
 from app.models.experiment_record import ExperimentRecord
 from app.models.life_domain_state_record import LifeDomainStateRecord
 from app.models.mission_record import MissionRecord
+from app.models.day_event_record import DayEventRecord
 
 __all__ = [
     "Organization",
@@ -32,4 +33,5 @@ __all__ = [
     "ExperimentRecord",
     "LifeDomainStateRecord",
     "MissionRecord",
+    "DayEventRecord",
 ]
