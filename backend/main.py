@@ -15,6 +15,7 @@ from app.api.v1.routes.memories import router as memories_router
 from app.api.v1.routes.memory import router as memory_router
 from app.api.v1.routes.organizations import router as organizations_router
 from app.api.v1.routes.projects import router as projects_router
+from app.api.v1.routes.research import router as research_router
 from app.api.v1.routes.tasks import router as tasks_router
 import importlib
 import sys
@@ -56,6 +57,7 @@ app.include_router(tasks_router, prefix=settings.api_prefix)
 app.include_router(memories_router, prefix=settings.api_prefix)
 app.include_router(conversations_router, prefix=settings.api_prefix)
 app.include_router(conversation_messages_router, prefix=settings.api_prefix)
+app.include_router(research_router, prefix=settings.api_prefix)
 
 
 @app.exception_handler(EnterpriseException)

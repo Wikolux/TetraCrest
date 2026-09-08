@@ -184,6 +184,21 @@ def test_only_provider_factory_imports_the_concrete_openai_provider():
     assert violations == [], f"Only conversation.provider_factory may import a concrete provider; found: {violations}"
 
 
+def test_only_tool_factory_imports_the_concrete_wikipedia_tool():
+    """P7.15 §7/§27: mirrors test_only_provider_factory_imports_the_concrete_openai_provider
+    exactly, for the Tool Framework's own equivalent composition point -
+    tools.factory (app/services/ai/tools/) is the one, intentional
+    exception; ResearchAgent, Personal OS, and every other module under
+    app/services/ai/ must not import app.services.tool_implementations
+    directly."""
+    violations = [
+        edge.importing_module
+        for edge in build_import_edges()
+        if edge.imported.startswith("app.services.tool_implementations") and edge.importing_module != "tools.factory"
+    ]
+    assert violations == [], f"Only tools.factory may import a concrete tool; found: {violations}"
+
+
 def test_executive_never_imports_a_specific_specialist():
     forbidden = {"agents.specialists.research"}
     violated = imported_boundaries_for("agents.executive") & forbidden

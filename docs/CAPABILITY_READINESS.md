@@ -100,13 +100,13 @@ A capability's CRL is never advanced by intention, estimate, or partial credit �
 |---|---|
 | **Name** | Tool Framework |
 | **Current CRL** | CRL-5 — Released (as scoped) |
-| **Status** | Contract, registry, factory, and execution engine fully complete. Zero concrete tools registered — an intentional v1.0 design state, not an incomplete one. |
+| **Status** | Contract, registry, factory, and execution engine fully complete. First concrete tool (`WikipediaSearchTool`, read-only, `ToolCategory.SEARCH`) implemented and registered as of P7.15, proven end-to-end through `ToolDiscovery → ToolRegistry → ToolExecutor → WikipediaSearchTool` under a real, non-fail-open `PermissionPolicy` requiring `ToolPermission.NETWORK`. `ToolExecutor`'s own shared `permission_policy=None` default is deliberately unchanged — P7.15's own production composition (the `/api/v1/research/lookup` route) is the one place that always supplies a real policy; every other concrete tool remains unregistered. |
 | **Owner Pack** | None — platform-owned |
 | **Dependencies** | Shared substrate, Runtime |
-| **Blocking Items** | A concrete tool provider (issue-tracker, calendar) does not yet exist anywhere on the platform — blocks *tool-dependent journeys* in CP-01/CP-02, not the framework itself |
-| **Next Milestone** | First concrete tool provider (unscheduled) |
-| **Known Risks** | None to the framework itself |
-| **Version Target** | v1.0 (framework shipped); first concrete provider unscheduled |
+| **Blocking Items** | Write-capable tools remain blocked from production use until idempotency/duplicate-execution protection and consequential-action authority (`AutonomyGrant`) are designed for that tier — not needed for the read-only tool shipped in P7.15 |
+| **Next Milestone** | A second concrete tool, ideally a write-capable one, to prove the deferred idempotency/autonomy questions for real (unscheduled) |
+| **Known Risks** | None to the framework itself; the fixed `PermissionPolicy` P7.15's route grants is an application-level capability policy, not general user/role authorization — no RBAC/ABAC source exists yet |
+| **Version Target** | v1.0 (framework shipped); first concrete tool shipped P7.15 |
 
 | Field | Value |
 |---|---|
