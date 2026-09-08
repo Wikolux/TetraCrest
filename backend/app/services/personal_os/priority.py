@@ -59,6 +59,7 @@ class PriorityConfig:
     urgency_soon_days: int = 7
     day_mode_boost: float = 0.3
     day_mode_suppress_penalty: float = 0.4
+    adaptation_priority_boost: float = 0.3
 
 
 @dataclass(frozen=True)

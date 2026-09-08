@@ -391,6 +391,74 @@ def test_adaptation_scope_cannot_represent_governed_configuration():
             assert fragment not in source, f"{module_path} contains {fragment!r} - adaptation must never touch governed configuration or execute arbitrary code"
 
 
+def test_priority_and_candidate_sources_do_not_touch_the_runtime():
+    """P7.11: reading adopted adaptations and adjusting a candidate's
+    momentum must stay exactly as deterministic as every other Priority
+    Engine calculation - no generative call anywhere near candidate
+    construction or scoring."""
+    for module_path in ("app.services.personal_os.priority", "app.services.personal_os.candidate_sources"):
+        imported = _imported_modules(module_path)
+        assert not any("runtime_adapter" in name or "prompt_builder" in name for name in imported), (
+            f"{module_path} imports a Runtime/PromptBuilder seam - this module must remain deterministic"
+        )
+
+
+def test_priority_py_defines_exactly_one_scoring_and_one_ranking_function():
+    """P7.11's own Critical Rule: adaptation runtime wiring must not
+    replace or duplicate calculate_score()/rank_candidates()/explain() -
+    verified structurally, not just by code review, that no second
+    definition of any of the three was introduced anywhere in the
+    package."""
+    forbidden = ("def calculate_score", "def rank_candidates", "def explain(")
+    for module_path in _PERSONAL_OS_MODULES:
+        if module_path == "app.services.personal_os.priority":
+            continue
+        source = inspect.getsource(importlib.import_module(module_path))
+        for fragment in forbidden:
+            assert fragment not in source, f"{module_path} defines {fragment!r} - priority.py must remain the only ranking/scoring/explanation engine"
+
+
+def test_priority_flow_only_reads_the_adaptation_repository_never_writes():
+    """P7.11 §13/§21: the Priority path is a consumer of adopted
+    adaptation state, never a second place that can change it - adoption,
+    rollback, and supersession remain exclusively AdaptationFlow's own
+    governed transitions."""
+    source = inspect.getsource(importlib.import_module("app.services.personal_os.priority_flow"))
+    forbidden_writes = (".save(", ".adopt(", ".rollback(", ".approve(", ".reject(", ".retire(")
+    for fragment in forbidden_writes:
+        assert fragment not in source, f"priority_flow.py calls {fragment!r} - it must only ever read adaptation state via list_active()/get_adopted_for_target()"
+    assert "list_active(" in source
+
+
+def test_adaptation_effect_is_a_closed_bounded_vocabulary_not_a_rule_language():
+    """P7.11 §3/§8: no generic rules engine, no DSL, no executable code
+    stored on an Adaptation - AdaptationEffectKind/PriorityDirection stay
+    small, named, closed StrEnums, and adaptation.py never imports eval/
+    exec/a template engine/a rule-evaluation library."""
+    from app.services.personal_os.shared.types import AdaptationEffectKind, PriorityDirection
+
+    assert len(list(AdaptationEffectKind)) == 1
+    assert len(list(PriorityDirection)) == 2
+
+    for module_path in ("app.services.personal_os.adaptation", "app.services.personal_os.candidate_sources", "app.services.personal_os.priority_flow"):
+        source = inspect.getsource(importlib.import_module(module_path))
+        for fragment in ("eval(", "exec(", "compile(", "jinja2", "Template(", "__import__"):
+            assert fragment not in source, f"{module_path} contains {fragment!r} - an adopted effect must never be interpreted as arbitrary code"
+
+
+def test_living_day_flow_gained_no_adaptation_specific_logic():
+    """P7.11 §19's own central requirement, verified structurally: the
+    adopted-effect behavior must reach replan()/present_replan() purely
+    through the shared priority_flow seam - living_day_flow.py itself
+    must not import the adaptation modules or reference AdaptationEffect/
+    AdaptationRepository directly."""
+    source = inspect.getsource(importlib.import_module("app.services.personal_os.living_day_flow"))
+    imported = _imported_modules("app.services.personal_os.living_day_flow")
+    assert not any("adaptation" in name for name in imported), "living_day_flow.py must not import any adaptation module directly - it inherits behavior only through priority_flow.py"
+    assert "AdaptationEffect" not in source
+    assert "AdaptationRepository" not in source
+
+
 def test_personal_os_package_lives_outside_the_frozen_ai_operating_system():
     """Personal OS is Application layer, not Platform layer - it must
     not live under app/services/ai/, the package

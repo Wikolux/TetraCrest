@@ -9,20 +9,23 @@ import pytest
 
 from app.services.ai.agents.specialists.runtime_adapter import RuntimeAdapter
 from app.services.ai.runtime.types import RuntimeResponse
-from app.services.personal_os.adaptation import AdaptationTarget
+from app.services.personal_os.adaptation import AdaptationEffect, AdaptationTarget
 from app.services.personal_os.adaptation_flow import AdaptationFlow
 from app.services.personal_os.adaptation_repository import InMemoryAdaptationRepository
 from app.services.personal_os.experiment import Experiment, ExperimentBaseline, ExperimentComparison, ExperimentMeasurement
 from app.services.personal_os.pattern import Pattern, PatternEvidenceItem
 from app.services.personal_os.reasoning import GrowthRecommendation, Hypothesis, InferredPattern, ObservedFact
 from app.services.personal_os.shared.types import (
+    AdaptationEffectKind,
     AdaptationScope,
     AdaptationStatus,
     Confidence,
     ExperimentOutcome,
     ExperimentStatus,
+    LifeDomain,
     PatternStatus,
     PatternType,
+    PriorityDirection,
 )
 
 ORG_ID, USER_ID = 1, 12
@@ -406,3 +409,61 @@ def test_present_falls_back_to_deterministic_phrasing_when_the_runtime_fails():
     proposed = flow.propose(pattern, organization_id=ORG_ID, user_id=USER_ID, target=_target())
     narrative = flow.present(proposed, pattern, organization_id=ORG_ID)
     assert "Add a 50% buffer." in narrative
+
+
+# --- runtime effect (P7.11): explicit, structured, never inferred from PatternType -----------------------
+
+
+def test_propose_without_an_effect_produces_a_purely_advisory_adaptation():
+    """Unchanged P7.10 behavior - omitting `effect` (every existing
+    caller) must not gain a runtime-consumable effect from nowhere."""
+    flow, _ = _flow()
+    proposed = flow.propose(_pattern(), organization_id=ORG_ID, user_id=USER_ID, target=_target())
+    assert proposed.effect is None
+
+
+def test_propose_accepts_an_explicit_structured_effect():
+    effect = AdaptationEffect(kind=AdaptationEffectKind.PRIORITY_ADJUSTMENT, direction=PriorityDirection.BOOST)
+    flow, _ = _flow()
+    proposed = flow.propose(
+        _pattern(), organization_id=ORG_ID, user_id=USER_ID, target=_target(AdaptationScope.USER_PREFERENCE, LifeDomain.CAREER.value), effect=effect
+    )
+    assert proposed.effect == effect
+
+
+def test_user_preference_priority_adjustment_requires_a_life_domain_target_id():
+    """§9's own STOP-rather-than-guess rule: a USER_PREFERENCE
+    PRIORITY_ADJUSTMENT effect has exactly one stable, structured
+    identifier to match against Priority candidates (LifeDomain) - an
+    arbitrary target_id string is rejected at construction, never
+    silently accepted and later fuzzy-matched."""
+    effect = AdaptationEffect(kind=AdaptationEffectKind.PRIORITY_ADJUSTMENT, direction=PriorityDirection.BOOST)
+    flow, _ = _flow()
+    with pytest.raises(ValueError):
+        flow.propose(_pattern(), organization_id=ORG_ID, user_id=USER_ID, target=_target(AdaptationScope.USER_PREFERENCE, "not-a-domain"), effect=effect)
+
+
+def test_mission_priority_adjustment_does_not_require_a_life_domain_target_id():
+    """A MISSION target's own mission_id is already the stable,
+    structured identifier - no additional constraint is needed there."""
+    effect = AdaptationEffect(kind=AdaptationEffectKind.PRIORITY_ADJUSTMENT, direction=PriorityDirection.SUPPRESS)
+    flow, _ = _flow()
+    proposed = flow.propose(_pattern(), organization_id=ORG_ID, user_id=USER_ID, target=_target(AdaptationScope.MISSION, "mission-1"), effect=effect)
+    assert proposed.effect == effect
+
+
+def test_relearn_can_carry_a_new_effect_replacing_the_predecessors():
+    domain_target = _target(AdaptationScope.USER_PREFERENCE, LifeDomain.CAREER.value)
+    boost = AdaptationEffect(kind=AdaptationEffectKind.PRIORITY_ADJUSTMENT, direction=PriorityDirection.BOOST)
+    suppress = AdaptationEffect(kind=AdaptationEffectKind.PRIORITY_ADJUSTMENT, direction=PriorityDirection.SUPPRESS)
+    flow, _ = _flow()
+
+    first = flow.propose(_pattern(pattern_id="p1"), organization_id=ORG_ID, user_id=USER_ID, target=domain_target, effect=boost)
+    first = flow.approve(first, organization_id=ORG_ID, user_id=USER_ID)
+    first = flow.adopt(first, organization_id=ORG_ID, user_id=USER_ID)
+
+    second = flow.propose_relearn(_pattern(pattern_id="p2"), organization_id=ORG_ID, user_id=USER_ID, supersedes=first, effect=suppress)
+    second = flow.approve(second, organization_id=ORG_ID, user_id=USER_ID)
+    second = flow.adopt(second, organization_id=ORG_ID, user_id=USER_ID)
+
+    assert flow.get_adopted(organization_id=ORG_ID, user_id=USER_ID, target=domain_target).effect == suppress

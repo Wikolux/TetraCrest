@@ -31,5 +31,7 @@ class AdaptationRecord(Base):
     status = Column(String(30), nullable=False, index=True)
     supersedes_adaptation_id = Column(String(64), nullable=True)
     decision_reason = Column(Text, nullable=False, default="")
+    effect_kind = Column(String(30), nullable=True)
+    effect_direction = Column(String(20), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

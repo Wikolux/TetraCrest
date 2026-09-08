@@ -435,3 +435,30 @@ class AdaptationStatus(StrEnum):
     REJECTED = "rejected"
     ROLLED_BACK = "rolled_back"
     SUPERSEDED = "superseded"
+
+
+class AdaptationEffectKind(StrEnum):
+    """P7.11 - the closed vocabulary of runtime-executable effect
+    families an adopted Adaptation may carry. Deliberately not a rule
+    language: adding a second kind means adding a second named,
+    structured, bounded interpretation deliberately vetted for its own
+    consumer, never a free-form string a consumer pattern-matches on.
+    Exactly one member exists because exactly one real runtime consumer
+    (the Priority Engine, via candidate construction) was identified in
+    P7.11 - this is closed-but-growable the same way PatternType is,
+    never a generic DSL."""
+
+    PRIORITY_ADJUSTMENT = "priority_adjustment"
+
+
+class PriorityDirection(StrEnum):
+    """P7.11 - which way a PRIORITY_ADJUSTMENT effect nudges a matching
+    candidate's momentum. Deliberately two named values, not an
+    arbitrary numeric weight supplied per-adaptation: the actual
+    magnitude stays a single, bounded, config-owned constant
+    (PriorityConfig.adaptation_priority_boost) so no adopted preference
+    can be authored strong enough to overwhelm the deterministic scoring
+    the Priority Engine already performs."""
+
+    BOOST = "boost"
+    SUPPRESS = "suppress"

@@ -13,13 +13,15 @@ source record carries no real signal for a factor, that factor is left
 at CandidateItem's own honest default (0.0), never guessed.
 """
 
+from dataclasses import replace
+
 from app.services.personal_os.daily_intent import DailyIntent
 from app.services.personal_os.experiment import Experiment
 from app.services.personal_os.living_day import LivingDayState
 from app.services.personal_os.mission import Mission
 from app.services.personal_os.pattern import Pattern
 from app.services.personal_os.priority import CandidateItem
-from app.services.personal_os.shared.types import ExperimentStatus, LifeDomain, PatternStatus
+from app.services.personal_os.shared.types import ExperimentStatus, LifeDomain, PatternStatus, PriorityDirection
 
 # A moderate, documented default (never a precise, fabricated valuation)
 # reflecting only "this is an active, user-created mission's own next
@@ -135,6 +137,56 @@ def from_pattern_recommendations(patterns: tuple[Pattern, ...]) -> tuple[Candida
             )
         )
     return tuple(items)
+
+
+def apply_adopted_priority_effects(
+    candidates: tuple[CandidateItem, ...],
+    *,
+    domain_effects: dict[LifeDomain, PriorityDirection],
+    mission_effects: dict[str, PriorityDirection],
+    boost_magnitude: float,
+) -> tuple[CandidateItem, ...]:
+    """P7.11: the one place an ADOPTED Adaptation's structured
+    PRIORITY_ADJUSTMENT effect actually touches a candidate - a bounded
+    nudge to `momentum` (the same factor from_pattern_recommendations()
+    already uses for a non-hard-fact signal), never a new factor, never
+    a rewrite of `calculate_score()`/`rank_candidates()`. `domain_effects`
+    /`mission_effects` are already-resolved {key: direction} maps (built
+    by the caller from whatever is currently ADOPTED - see
+    priority_flow.py); this function itself reads no repository and
+    knows nothing about Adaptation's own lifecycle.
+
+    A mission-specific effect takes precedence over a domain-level one
+    for the same candidate (the more specific target wins) - the only
+    precedence rule this function needs, since a candidate can match at
+    most one of the two maps' keys by construction (item_id/source_id
+    vs. domain are different fields). Deliberately never applied to
+    is_current_intent candidates (from_daily_intent()/
+    from_living_day_state() never pass through here - see
+    priority_flow.gather_non_intent_candidates()): a learned preference
+    nudges discretionary candidates (missions, pattern recommendations,
+    experiments), it never re-weights what the user already explicitly
+    said they intend to do today."""
+    if not domain_effects and not mission_effects:
+        return candidates
+
+    adjusted = []
+    for candidate in candidates:
+        direction: PriorityDirection | None = None
+        if candidate.source == "mission" and candidate.source_id in mission_effects:
+            direction = mission_effects[candidate.source_id]
+        elif candidate.domain is not None and candidate.domain in domain_effects:
+            direction = domain_effects[candidate.domain]
+
+        if direction is None:
+            adjusted.append(candidate)
+            continue
+
+        delta = boost_magnitude if direction == PriorityDirection.BOOST else -boost_magnitude
+        new_momentum = min(1.0, max(0.0, candidate.momentum + delta))
+        adjusted.append(replace(candidate, momentum=new_momentum))
+
+    return tuple(adjusted)
 
 
 def from_experiments(experiments: tuple[Experiment, ...]) -> tuple[CandidateItem, ...]:

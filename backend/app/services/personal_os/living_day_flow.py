@@ -114,7 +114,7 @@ class LivingDayFlow:
         PriorityIntelligenceFlow.present() directly - never a second
         narration mechanism."""
         ranking = self.replan(organization_id=organization_id, user_id=user_id, today=today, available_hours=available_hours, day_mode=day_mode)
-        return self.priority_flow.present(ranking, organization_id=organization_id, today=today, conversation_id=conversation_id)
+        return self.priority_flow.present(ranking, organization_id=organization_id, today=today, conversation_id=conversation_id, user_id=user_id)
 
     def apply_statement(self, *, organization_id: int, user_id: int, today: date, user_text: str) -> DayInteractionResult:
         """P6.4: the conversational seam - interprets `user_text` against

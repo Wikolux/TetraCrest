@@ -6,7 +6,7 @@ not merely that an in-memory dict does."""
 
 from datetime import date
 
-from app.services.personal_os.adaptation import Adaptation, AdaptationTarget
+from app.services.personal_os.adaptation import Adaptation, AdaptationEffect, AdaptationTarget
 from app.services.personal_os.adaptation_flow import AdaptationFlow
 from app.services.personal_os.daily_intent import DailyIntent, IntentField, PlannedActivity
 from app.services.personal_os.day_mode import DayMode
@@ -21,6 +21,7 @@ from app.services.personal_os.reasoning import GrowthRecommendation, Hypothesis,
 from app.services.personal_os.reconciliation import ReconciliationEvidence, reconcile, reconcile_all
 from app.services.personal_os.repository import InMemoryDailyIntentRepository
 from app.services.personal_os.shared.types import (
+    AdaptationEffectKind,
     AdaptationScope,
     AdaptationStatus,
     AutonomyAction,
@@ -36,6 +37,7 @@ from app.services.personal_os.shared.types import (
     MissionStatus,
     PatternStatus,
     PatternType,
+    PriorityDirection,
     UserPatternResponse,
 )
 from app.services.personal_os.sql_repository import (
@@ -662,6 +664,29 @@ def test_adaptation_round_trips(db_session):
     assert fetched.expected_outcome == "Fewer postponements"
 
 
+def test_adaptation_effect_round_trips(db_session):
+    """P7.11: the structured runtime effect persists and reconstructs
+    exactly - the durability §20/§9 requires for behavior to survive a
+    process restart, since the Priority flow reads this back through
+    AdaptationRepository, never a runtime-only cache."""
+    repo = SqlAdaptationRepository(db_session)
+    effect = AdaptationEffect(kind=AdaptationEffectKind.PRIORITY_ADJUSTMENT, direction=PriorityDirection.BOOST)
+    saved = repo.save(_adaptation(target_id="career", effect=effect), organization_id=1, user_id=2)
+    db_session.expire_all()
+
+    fetched = repo.get_latest(organization_id=1, user_id=2, adaptation_id=saved.adaptation_id)
+    assert fetched.effect == effect
+
+
+def test_adaptation_with_no_effect_round_trips_as_none(db_session):
+    repo = SqlAdaptationRepository(db_session)
+    saved = repo.save(_adaptation(), organization_id=1, user_id=2)
+    db_session.expire_all()
+
+    fetched = repo.get_latest(organization_id=1, user_id=2, adaptation_id=saved.adaptation_id)
+    assert fetched.effect is None
+
+
 def test_adaptation_survives_a_fresh_session(db_engine):
     from sqlalchemy.orm import sessionmaker
 
@@ -777,3 +802,84 @@ def test_real_path_pattern_to_adopted_adaptation_and_back_via_a_fresh_session(db
         AdaptationStatus.PROPOSED, AdaptationStatus.UNDER_EVALUATION, AdaptationStatus.APPROVED, AdaptationStatus.ADOPTED, AdaptationStatus.ROLLED_BACK,
     ]
     fresh_session.close()
+
+
+def test_real_path_adopted_priority_effect_changes_living_ranking_across_a_fresh_session(db_session, db_engine):
+    """P7.11 §19/§23: extends the P7.10 real path one step further - the
+    same real Pattern detection -> Adaptation proposal+approval+adoption
+    chain, but this time carrying an explicit PRIORITY_ADJUSTMENT effect,
+    read back through a completely fresh SQL session into a real
+    PriorityIntelligenceFlow, proving the adopted effect changes an
+    actual ranking (not just that the record persists) and that rollback
+    removes the change automatically."""
+    from app.services.personal_os.adaptation import AdaptationEffect
+    from app.services.personal_os.experiment_repository import InMemoryExperimentRepository
+    from app.services.personal_os.priority_flow import PriorityIntelligenceFlow
+    from app.services.personal_os.shared.types import AdaptationEffectKind, LifeDomain, PriorityDirection
+
+    intent_repo = InMemoryDailyIntentRepository()
+    evening_repo = InMemoryEveningReflectionRepository()
+    pattern_repo = SqlPatternRepository(db_session)
+    adaptation_repo = SqlAdaptationRepository(db_session)
+    mission_repo = SqlMissionRepository(db_session)
+
+    org_id, user_id = 1, 11
+    for d in (1, 3, 5, 8):
+        day = date(2026, 7, d)
+        activity = PlannedActivity(description="Follow up with recruiter", focus_area="career")
+        intent = DailyIntent(intent_date=day, stated_intention="Follow up on job leads", day_type=DayType.WORK, planned_activities=(activity,))
+        intent_repo.save(intent, organization_id=org_id, user_id=user_id)
+        evidence = {activity.description: ReconciliationEvidence(explicitly_postponed=True, note="ran out of time")}
+        reflection = EveningReflection(reflection_date=day, accomplishments=(), evidence_by_activity_description=evidence)
+        reconciliations = reconcile_all((activity,), evidence)
+        evening_repo.save(reflection, reconciliations, organization_id=org_id, user_id=user_id, daily_intent_id=intent.intent_id)
+
+    mission_repo.save(
+        Mission(mission_id="mission-real", objective="Land a new role", status=MissionStatus.ACTIVE, domain=LifeDomain.CAREER, next_step="Follow up with recruiter"),
+        organization_id=org_id,
+        user_id=user_id,
+    )
+
+    pattern_flow = PatternDetectionFlow(intent_repo, evening_repo, pattern_repo)
+    pattern_flow.detect(organization_id=org_id, user_id=user_id, today=date(2026, 7, 15))
+    surfacing = pattern_flow.surface_next(organization_id=org_id, user_id=user_id)
+    confirmed = pattern_flow.respond(organization_id=org_id, user_id=user_id, pattern=surfacing.pattern, response=UserPatternResponse.CONFIRM)
+    recommendation = GrowthRecommendation(statement="Prioritize career follow-ups.", responds_to=confirmed.possible_hypotheses[0])
+    with_recommendation = pattern_flow.attach_recommendation(organization_id=org_id, user_id=user_id, pattern=confirmed, recommendation=recommendation)
+
+    adaptation_flow = AdaptationFlow(adaptation_repo)
+    target = AdaptationTarget(scope=AdaptationScope.USER_PREFERENCE, target_id=LifeDomain.CAREER.value)
+    effect = AdaptationEffect(kind=AdaptationEffectKind.PRIORITY_ADJUSTMENT, direction=PriorityDirection.BOOST)
+    proposed = adaptation_flow.propose(with_recommendation, organization_id=org_id, user_id=user_id, target=target, effect=effect)
+    approved = adaptation_flow.approve(proposed, organization_id=org_id, user_id=user_id, reason="Evidence is clear")
+    adopted = adaptation_flow.adopt(approved, organization_id=org_id, user_id=user_id)
+    db_session.commit()
+
+    from sqlalchemy.orm import sessionmaker
+
+    SessionLocal = sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
+
+    def _ranking_via_fresh_session():
+        session = SessionLocal()
+        flow = PriorityIntelligenceFlow(
+            InMemoryDailyIntentRepository(),
+            SqlMissionRepository(session),
+            SqlPatternRepository(session),
+            InMemoryExperimentRepository(),
+            adaptation_repository=SqlAdaptationRepository(session),
+        )
+        ranking = flow.build_ranking(organization_id=org_id, user_id=user_id, today=date(2026, 7, 16), available_hours=8)
+        session.close()
+        return next(s for s in ranking.core if s.item.source == "mission")
+
+    boosted_score = _ranking_via_fresh_session()
+    assert boosted_score.item.momentum > 0.0
+
+    # rollback, entirely via a fresh session/repository, must remove the effect automatically
+    rollback_session = SessionLocal()
+    AdaptationFlow(SqlAdaptationRepository(rollback_session)).rollback(adopted, organization_id=org_id, user_id=user_id, reason="No longer needed")
+    rollback_session.commit()
+    rollback_session.close()
+
+    restored_score = _ranking_via_fresh_session()
+    assert restored_score.item.momentum == 0.0

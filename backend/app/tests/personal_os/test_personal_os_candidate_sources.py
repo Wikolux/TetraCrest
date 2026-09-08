@@ -4,14 +4,15 @@ repository, never invented content."""
 
 from datetime import date
 
-from app.services.personal_os.candidate_sources import from_daily_intent, from_experiments, from_living_day_state, from_missions, from_pattern_recommendations
+from app.services.personal_os.candidate_sources import apply_adopted_priority_effects, from_daily_intent, from_experiments, from_living_day_state, from_missions, from_pattern_recommendations
 from app.services.personal_os.daily_intent import DailyIntent, PlannedActivity
 from app.services.personal_os.experiment import Experiment, ExperimentBaseline
 from app.services.personal_os.living_day import DayEvent, reconstruct
 from app.services.personal_os.mission import Mission
 from app.services.personal_os.pattern import Pattern, PatternEvidenceItem
+from app.services.personal_os.priority import CandidateItem
 from app.services.personal_os.reasoning import GrowthRecommendation, Hypothesis, InferredPattern, ObservedFact
-from app.services.personal_os.shared.types import Confidence, DayEventType, DayType, ExperimentStatus, LifeDomain, MissionStatus, PatternStatus, PatternType
+from app.services.personal_os.shared.types import Confidence, DayEventType, DayType, ExperimentStatus, LifeDomain, MissionStatus, PatternStatus, PatternType, PriorityDirection
 
 TODAY = date(2026, 8, 13)
 
@@ -144,3 +145,58 @@ def test_from_living_day_state_includes_mid_day_additions():
     assert len(items) == 1
     assert items[0].description == "Buy a gift"
     assert items[0].source == "living_day"
+
+
+# --- apply_adopted_priority_effects (P7.11): the one place an ADOPTED effect touches a candidate ----
+
+
+def test_apply_adopted_priority_effects_is_a_no_op_with_no_applicable_effects():
+    items = (CandidateItem(item_id="mission:m1", description="x", domain=LifeDomain.CAREER, source="mission", source_id="m1"),)
+    result = apply_adopted_priority_effects(items, domain_effects={}, mission_effects={}, boost_magnitude=0.3)
+    assert result == items
+
+
+def test_apply_adopted_priority_effects_boosts_momentum_for_a_matching_domain():
+    items = (CandidateItem(item_id="mission:m1", description="x", domain=LifeDomain.CAREER, momentum=0.0, source="mission", source_id="m1"),)
+    result = apply_adopted_priority_effects(items, domain_effects={LifeDomain.CAREER: PriorityDirection.BOOST}, mission_effects={}, boost_magnitude=0.3)
+    assert result[0].momentum == 0.3
+
+
+def test_apply_adopted_priority_effects_suppresses_momentum_for_a_matching_domain():
+    items = (CandidateItem(item_id="mission:m1", description="x", domain=LifeDomain.FINANCE_INVESTMENTS, momentum=0.5, source="mission", source_id="m1"),)
+    result = apply_adopted_priority_effects(items, domain_effects={LifeDomain.FINANCE_INVESTMENTS: PriorityDirection.SUPPRESS}, mission_effects={}, boost_magnitude=0.3)
+    assert result[0].momentum == 0.2
+
+
+def test_apply_adopted_priority_effects_clamps_to_the_valid_range():
+    items = (CandidateItem(item_id="pattern:p1", description="x", momentum=0.9, domain=LifeDomain.CAREER, source="pattern", source_id="p1"),)
+    result = apply_adopted_priority_effects(items, domain_effects={LifeDomain.CAREER: PriorityDirection.BOOST}, mission_effects={}, boost_magnitude=0.3)
+    assert result[0].momentum == 1.0
+
+
+def test_apply_adopted_priority_effects_ignores_non_matching_candidates():
+    items = (CandidateItem(item_id="mission:m1", description="x", domain=LifeDomain.STUDY, momentum=0.4, source="mission", source_id="m1"),)
+    result = apply_adopted_priority_effects(items, domain_effects={LifeDomain.CAREER: PriorityDirection.BOOST}, mission_effects={}, boost_magnitude=0.3)
+    assert result[0].momentum == 0.4
+
+
+def test_apply_adopted_priority_effects_a_mission_specific_effect_takes_precedence_over_domain():
+    items = (CandidateItem(item_id="mission:m1", description="x", domain=LifeDomain.CAREER, momentum=0.0, source="mission", source_id="m1"),)
+    result = apply_adopted_priority_effects(
+        items,
+        domain_effects={LifeDomain.CAREER: PriorityDirection.BOOST},
+        mission_effects={"m1": PriorityDirection.SUPPRESS},
+        boost_magnitude=0.3,
+    )
+    assert result[0].momentum == 0.0
+
+
+def test_apply_adopted_priority_effects_never_touches_current_intent_candidates_when_not_given_to_it():
+    """This function itself has no notion of is_current_intent - the
+    guarantee that explicit intent is never adjusted comes from
+    priority_flow.gather_non_intent_candidates() never passing intent
+    candidates through this function at all (see
+    test_personal_os_priority_flow.py)."""
+    items = (CandidateItem(item_id="intent:x", description="x", domain=LifeDomain.CAREER, is_current_intent=True, momentum=0.0, source="daily_intent"),)
+    result = apply_adopted_priority_effects(items, domain_effects={LifeDomain.CAREER: PriorityDirection.BOOST}, mission_effects={}, boost_magnitude=0.3)
+    assert result[0].momentum == 0.3

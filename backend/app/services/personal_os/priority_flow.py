@@ -20,7 +20,7 @@ generative step is phrasing an ALREADY-RANKED, ALREADY-EXPLAINED item
 conversationally - mirroring pattern_flow.py's/experiment_flow.py's own
 "compute first, narrate second" discipline exactly (§27)."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 
 from app.services.ai.agents.specialists.runtime_adapter import RuntimeAdapter
@@ -29,14 +29,15 @@ from app.services.ai.runtime.types import RuntimeRequest
 from app.services.ai.shared.execution_context import SharedExecutionContext
 from app.services.context.types import ContextItem, ContextPackage, ContextSection
 from app.services.prompt_builder.builder import PromptBuilder
-from app.services.personal_os.candidate_sources import from_daily_intent, from_experiments, from_missions, from_pattern_recommendations
+from app.services.personal_os.adaptation_repository import AdaptationRepository
+from app.services.personal_os.candidate_sources import apply_adopted_priority_effects, from_daily_intent, from_experiments, from_missions, from_pattern_recommendations
 from app.services.personal_os.day_mode import DayMode, DayModeKind, infer_day_mode
 from app.services.personal_os.experiment_repository import ExperimentRepository
 from app.services.personal_os.mission_repository import MissionRepository
 from app.services.personal_os.pattern_repository import PatternRepository
 from app.services.personal_os.priority import CandidateItem, OverrideResult, PriorityConfig, PriorityExplanation, PriorityScore, apply_override, explain, rank_candidates
 from app.services.personal_os.repository import DailyIntentRepository
-from app.services.personal_os.shared.types import LifeDomain
+from app.services.personal_os.shared.types import AdaptationEffectKind, AdaptationScope, AdaptationStatus, LifeDomain, PriorityDirection
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,7 @@ class PriorityIntelligenceFlow:
         runtime_adapter: RuntimeAdapter | None = None,
         default_provider: ProviderName = ProviderName.OPENAI,
         config: PriorityConfig | None = None,
+        adaptation_repository: AdaptationRepository | None = None,
     ) -> None:
         self.intent_repository = intent_repository
         self.mission_repository = mission_repository
@@ -77,6 +79,7 @@ class PriorityIntelligenceFlow:
         self.runtime_adapter = runtime_adapter or RuntimeAdapter()
         self.default_provider = default_provider
         self.config = config or PriorityConfig()
+        self.adaptation_repository = adaptation_repository
 
     def ask_day_mode(self) -> str:
         """§11's own literal question - asked before any ranking is
@@ -128,7 +131,55 @@ class PriorityIntelligenceFlow:
         experiments = self.experiment_repository.list_active(organization_id=organization_id, user_id=user_id)
         candidates.extend(from_experiments(experiments))
 
+        domain_effects, mission_effects = self._adopted_priority_effects(organization_id=organization_id, user_id=user_id)
+        if domain_effects or mission_effects:
+            candidates = list(
+                apply_adopted_priority_effects(
+                    tuple(candidates),
+                    domain_effects=domain_effects,
+                    mission_effects=mission_effects,
+                    boost_magnitude=self.config.adaptation_priority_boost,
+                )
+            )
+
         return tuple(candidates)
+
+    def _adopted_priority_effects(self, *, organization_id: int, user_id: int) -> tuple[dict[LifeDomain, PriorityDirection], dict[str, PriorityDirection]]:
+        """P7.11: resolves whatever is CURRENTLY adopted into the two
+        small maps apply_adopted_priority_effects() needs - re-derived
+        fresh on every call from AdaptationRepository.list_active()
+        (never cached), which is what makes rollback/supersession take
+        effect automatically without this flow doing anything special
+        (list_active() already excludes ROLLED_BACK/SUPERSEDED/REJECTED
+        by construction - adaptation_repository.py's own guarantee).
+
+        Only USER_PREFERENCE and MISSION scopes are runtime-actionable
+        here (P7.11's own first-slice scope decision); USER and WORKFLOW
+        adaptations may exist as governed records but are never read by
+        this method - not because they are hidden, but because no
+        Priority Engine seam yet gives them a meaningful runtime
+        consumer. An adaptation whose scope/effect this method does not
+        recognize is simply skipped, never guessed into behavior."""
+        domain_effects: dict[LifeDomain, PriorityDirection] = {}
+        mission_effects: dict[str, PriorityDirection] = {}
+        if self.adaptation_repository is None:
+            return domain_effects, mission_effects
+
+        for adaptation in self.adaptation_repository.list_active(organization_id=organization_id, user_id=user_id):
+            if adaptation.status != AdaptationStatus.ADOPTED or adaptation.effect is None:
+                continue
+            if adaptation.effect.kind != AdaptationEffectKind.PRIORITY_ADJUSTMENT:
+                continue
+            if adaptation.target.scope == AdaptationScope.USER_PREFERENCE:
+                try:
+                    domain = LifeDomain(adaptation.target.target_id)
+                except ValueError:
+                    continue
+                domain_effects[domain] = adaptation.effect.direction
+            elif adaptation.target.scope == AdaptationScope.MISSION:
+                mission_effects[adaptation.target.target_id] = adaptation.effect.direction
+
+        return domain_effects, mission_effects
 
     def build_ranking(
         self,
@@ -159,20 +210,78 @@ class PriorityIntelligenceFlow:
         candidates = self.gather_candidates(organization_id=organization_id, user_id=user_id, today=today)
         return apply_override(candidates, today=today, available_hours=available_hours, day_mode=day_mode, hold_domains=hold_domains, config=self.config)
 
-    def present(self, ranking, *, organization_id: int, today: date, conversation_id: int | None = None) -> PriorityPresentation:
+    def present(
+        self, ranking, *, organization_id: int, today: date, conversation_id: int | None = None, user_id: int | None = None
+    ) -> PriorityPresentation:
         """Evidence/score/explanation -> one generative rephrasing each
         (§12's "Priority, why it matters, deadline/time, suggested next
         action" shape) - the deterministic explanation is computed first
         and handed to the Runtime; the Runtime is never asked to decide
-        what matters, only to phrase what already does."""
-        core = tuple(self._entry(score, organization_id=organization_id, today=today, conversation_id=conversation_id) for score in ranking.core)
-        optional = tuple(self._entry(score, organization_id=organization_id, today=today, conversation_id=conversation_id) for score in ranking.optional)
+        what matters, only to phrase what already does.
+
+        `user_id` (P7.11, optional) lets this step attribute a ranking
+        that was nudged by an adopted preference back to that preference
+        (§17's own "must be capable of identifying that the decision was
+        influenced by an adopted preference... never describe it as
+        objective fact") - resolved fresh via the same
+        `_adopted_priority_effects()` gather_non_intent_candidates()
+        already uses, never cached, never a second explanation engine.
+        Omitting it (existing callers) skips the attribution line only;
+        every other behavior is unchanged."""
+        domain_effects, mission_effects = ({}, {})
+        if user_id is not None:
+            domain_effects, mission_effects = self._adopted_priority_effects(organization_id=organization_id, user_id=user_id)
+        core = tuple(
+            self._entry(score, organization_id=organization_id, today=today, conversation_id=conversation_id, domain_effects=domain_effects, mission_effects=mission_effects)
+            for score in ranking.core
+        )
+        optional = tuple(
+            self._entry(score, organization_id=organization_id, today=today, conversation_id=conversation_id, domain_effects=domain_effects, mission_effects=mission_effects)
+            for score in ranking.optional
+        )
         return PriorityPresentation(core=core, optional=optional, day_mode=ranking.day_mode)
 
-    def _entry(self, score: PriorityScore, *, organization_id: int, today: date, conversation_id: int | None) -> PriorityEntry:
+    def _entry(
+        self,
+        score: PriorityScore,
+        *,
+        organization_id: int,
+        today: date,
+        conversation_id: int | None,
+        domain_effects: dict[LifeDomain, PriorityDirection],
+        mission_effects: dict[str, PriorityDirection],
+    ) -> PriorityEntry:
         explanation = explain(score, today=today)
+        explanation = self._attribute_adaptation(score, explanation, domain_effects, mission_effects)
         narrative = self._narrate(score, explanation, organization_id, conversation_id)
         return PriorityEntry(score=score, explanation=explanation, narrative=narrative)
+
+    @staticmethod
+    def _attribute_adaptation(
+        score: PriorityScore,
+        explanation: PriorityExplanation,
+        domain_effects: dict[LifeDomain, PriorityDirection],
+        mission_effects: dict[str, PriorityDirection],
+    ) -> PriorityExplanation:
+        """P7.11 §17: appends one attribution fact when this candidate
+        matched a currently-ADOPTED preference/mission adjustment -
+        stated explicitly as a preference the user previously adopted,
+        never as an objective fact about the item itself, and never a
+        second FACT/INFERENCE/RECOMMENDATION structure (still the exact
+        PriorityExplanation `explain()` already produced, only with one
+        more entry in `facts`)."""
+        item = score.item
+        direction = None
+        if item.source == "mission" and item.source_id in mission_effects:
+            direction = mission_effects[item.source_id]
+        elif item.domain is not None and item.domain in domain_effects:
+            direction = domain_effects[item.domain]
+        if direction is None:
+            return explanation
+
+        verb = "raised" if direction == PriorityDirection.BOOST else "lowered"
+        attribution = f"This was {verb} because of a preference you previously adopted, not because it is objectively {verb} in priority."
+        return replace(explanation, facts=(*explanation.facts, attribution))
 
     def _narrate(self, score: PriorityScore, explanation: PriorityExplanation, organization_id: int, conversation_id: int | None) -> str:
         """The one real Runtime integration point in this flow - mirrors

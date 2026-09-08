@@ -26,7 +26,7 @@ from app.services.ai.runtime.types import RuntimeRequest
 from app.services.ai.shared.execution_context import SharedExecutionContext
 from app.services.context.types import ContextItem, ContextPackage, ContextSection
 from app.services.prompt_builder.builder import PromptBuilder
-from app.services.personal_os.adaptation import Adaptation, AdaptationTarget
+from app.services.personal_os.adaptation import Adaptation, AdaptationEffect, AdaptationTarget
 from app.services.personal_os.adaptation_repository import AdaptationRepository
 from app.services.personal_os.experiment import Experiment
 from app.services.personal_os.pattern import Pattern
@@ -47,7 +47,14 @@ class AdaptationFlow:
     # --- LEARN (§6) / RELEARN (§8): propose -------------------------------------------------------
 
     def propose(
-        self, pattern: Pattern, *, organization_id: int, user_id: int, target: AdaptationTarget, expected_outcome: str = ""
+        self,
+        pattern: Pattern,
+        *,
+        organization_id: int,
+        user_id: int,
+        target: AdaptationTarget,
+        expected_outcome: str = "",
+        effect: AdaptationEffect | None = None,
     ) -> Adaptation:
         """§6: evidence -> pattern -> candidate. Requires a CONFIRMED
         pattern with an attached recommendation - the identical evidence
@@ -56,6 +63,15 @@ class AdaptationFlow:
         hasn't yet confirmed would be advice built on nothing the user
         actually agreed happened") - never a single unverified
         observation becoming a proposal (§ Evidence Requirement).
+
+        `effect` (P7.11, optional) is the explicit, structured runtime
+        behavior this proposal asks to adopt - authored by the caller
+        (the human, or an agent acting on their explicit behalf) at
+        proposal time, exactly like `expected_outcome`; never derived
+        from `pattern.pattern_type` or `pattern.recommendation.statement`
+        here or anywhere downstream (see AdaptationEffect's own
+        docstring). Omitting it produces a purely advisory Adaptation
+        with no runtime-consumable effect, unchanged from P7.10.
 
         Idempotent (§16): a second proposal for the same pattern and the
         same target while an active one already exists returns the
@@ -75,6 +91,7 @@ class AdaptationFlow:
             confidence=pattern.confidence,
             expected_outcome=expected_outcome,
             status=AdaptationStatus.PROPOSED,
+            effect=effect,
         )
         return self.adaptation_repository.save(adaptation, organization_id=organization_id, user_id=user_id)
 
@@ -86,13 +103,16 @@ class AdaptationFlow:
         user_id: int,
         supersedes: Adaptation,
         expected_outcome: str = "",
+        effect: AdaptationEffect | None = None,
     ) -> Adaptation:
         """§8: a new hypothesis, evidenced by new/contradictory Pattern
         evidence, proposed as a replacement for an already-ADOPTED
         adaptation - lineage preserved via supersedes_adaptation_id;
         the predecessor is only actually superseded once THIS proposal
         is itself adopted (adopt() below), never the moment it is merely
-        proposed."""
+        proposed. `effect` (P7.11, optional) follows propose()'s own
+        rule exactly - the caller's explicit statement of the new
+        runtime behavior, defaulting to none."""
         self._require_evidence(pattern)
         if supersedes.status != AdaptationStatus.ADOPTED:
             raise ValueError("propose_relearn() requires superseding an ADOPTED adaptation")
@@ -109,6 +129,7 @@ class AdaptationFlow:
             expected_outcome=expected_outcome,
             status=AdaptationStatus.PROPOSED,
             supersedes_adaptation_id=supersedes.adaptation_id,
+            effect=effect,
         )
         return self.adaptation_repository.save(adaptation, organization_id=organization_id, user_id=user_id)
 

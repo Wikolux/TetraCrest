@@ -37,7 +37,7 @@ from app.repositories.experiment_record_repository import ExperimentRecordReposi
 from app.repositories.life_domain_state_record_repository import LifeDomainStateRecordRepository
 from app.repositories.mission_record_repository import MissionRecordRepository
 from app.repositories.pattern_record_repository import PatternRecordRepository
-from app.services.personal_os.adaptation import Adaptation, AdaptationTarget
+from app.services.personal_os.adaptation import Adaptation, AdaptationEffect, AdaptationTarget
 from app.services.personal_os.adaptation_repository import ACTIVE_ADAPTATION_STATUSES, AdaptationRepository
 from app.services.personal_os.daily_intent import DailyIntent, IntentField, PlannedActivity
 from app.services.personal_os.day_mode import DayMode
@@ -56,6 +56,7 @@ from app.services.personal_os.reasoning import GrowthRecommendation, Hypothesis,
 from app.services.personal_os.reconciliation import ReconciliationEvidence, ReconciliationRecord
 from app.services.personal_os.repository import DailyIntentRepository
 from app.services.personal_os.shared.types import (
+    AdaptationEffectKind,
     AdaptationScope,
     AdaptationStatus,
     AutonomyAction,
@@ -73,6 +74,7 @@ from app.services.personal_os.shared.types import (
     MissionStatus,
     PatternStatus,
     PatternType,
+    PriorityDirection,
     ReconciliationStatus,
 )
 
@@ -878,6 +880,8 @@ class SqlAdaptationRepository(AdaptationRepository):
             status=adaptation.status.value,
             supersedes_adaptation_id=adaptation.supersedes_adaptation_id,
             decision_reason=adaptation.decision_reason,
+            effect_kind=adaptation.effect.kind.value if adaptation.effect else None,
+            effect_direction=adaptation.effect.direction.value if adaptation.effect else None,
         )
         self._records.create(record)
         return self._to_domain(record)
@@ -906,6 +910,9 @@ class SqlAdaptationRepository(AdaptationRepository):
     def _to_domain(record: AdaptationRecord) -> Adaptation:
         created_at = record.created_at if isinstance(record.created_at, datetime) else datetime.fromisoformat(str(record.created_at))
         updated_at = record.updated_at if isinstance(record.updated_at, datetime) else datetime.fromisoformat(str(record.updated_at))
+        effect = None
+        if record.effect_kind is not None and record.effect_direction is not None:
+            effect = AdaptationEffect(kind=AdaptationEffectKind(record.effect_kind), direction=PriorityDirection(record.effect_direction))
         return Adaptation(
             adaptation_id=record.adaptation_id,
             target=AdaptationTarget(scope=AdaptationScope(record.scope), target_id=record.target_id),
@@ -916,6 +923,7 @@ class SqlAdaptationRepository(AdaptationRepository):
             status=AdaptationStatus(record.status),
             supersedes_adaptation_id=record.supersedes_adaptation_id,
             decision_reason=record.decision_reason,
+            effect=effect,
             created_at=created_at,
             updated_at=updated_at,
         )
