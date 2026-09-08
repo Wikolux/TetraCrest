@@ -13,6 +13,7 @@ it is purely test-time static analysis.
 
 from dependency_rules import (
     ALLOWED_DEPENDENCIES,
+    build_import_edges,
     classify_module,
     find_boundary_violations,
     find_vendor_import_violations,
@@ -163,6 +164,24 @@ def test_conversation_boundary_forbidden_dependencies():
     forbidden = {"runtime", "agents", "tools", "vision"}
     violated = imported_boundaries_for("conversation") & forbidden
     assert not violated, f"Conversation illegally depends on: {sorted(violated)}"
+
+
+def test_only_provider_factory_imports_the_concrete_openai_provider():
+    """P7.14 §4: only the provider/composition layer may know a concrete
+    provider is OpenAI - verified structurally across the entire AI
+    Operating System import graph, not just documented as a convention.
+    provider_factory.py (app/services/ai/conversation/) is the one,
+    intentional exception; every other module under app/services/ai/ -
+    including sibling conversation/ modules, every specialist, the
+    Executive, the Runtime itself - must not import
+    app.services.conversation_providers at all."""
+    violations = [
+        edge.importing_module
+        for edge in build_import_edges()
+        if edge.imported.startswith("app.services.conversation_providers")
+        and edge.importing_module != "conversation.provider_factory"
+    ]
+    assert violations == [], f"Only conversation.provider_factory may import a concrete provider; found: {violations}"
 
 
 def test_executive_never_imports_a_specific_specialist():

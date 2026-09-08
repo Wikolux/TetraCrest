@@ -124,13 +124,13 @@ A capability's CRL is never advanced by intention, estimate, or partial credit �
 |---|---|
 | **Name** | Conversation Framework |
 | **Current CRL** | CRL-5 — Released (as scoped) |
-| **Status** | Provider-agnostic contract, registry, factory fully complete. Zero concrete vendor providers registered — intentional, matching Tool and Vision. |
+| **Status** | Provider-agnostic contract, registry, factory fully complete. First concrete vendor provider (OpenAI, Chat Completions) implemented and registered as of P7.14 — proven end-to-end through RuntimeAdapter → AIRuntime → RuntimeExecutor → ConversationProviderFactory → ConversationProviderRegistry → OpenAIConversationProvider, and into an existing, unmodified Personal OS narration path. Every other vendor (Anthropic, Gemini, Ollama, OpenRouter, DeepSeek, Qwen, Mistral, Grok) remains unregistered — matching Tool and Vision's own "framework complete, additional concrete providers unscheduled" state. |
 | **Owner Pack** | None — platform-owned |
 | **Dependencies** | Shared substrate |
-| **Blocking Items** | A concrete vendor provider does not yet exist anywhere — blocks real-world generation, not the framework |
-| **Next Milestone** | First concrete provider (unscheduled) |
-| **Known Risks** | None to the framework itself |
-| **Version Target** | v1.0 (framework shipped); first concrete provider unscheduled |
+| **Blocking Items** | None for a single-provider (OpenAI) real-model path; a second vendor provider does not yet exist — does not block real-world generation, only provider choice/failover |
+| **Next Milestone** | Second concrete provider (unscheduled); real tool execution (see Personal OS/Roadmap for the P7.13 gap audit this follows) |
+| **Known Risks** | Single-vendor dependency; no cross-provider failover exists yet (deliberately out of P7.14's scope) |
+| **Version Target** | v1.0 (framework shipped); first concrete provider shipped P7.14 |
 
 | Field | Value |
 |---|---|

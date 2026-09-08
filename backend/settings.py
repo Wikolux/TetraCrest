@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     embedding_max_retries: int = 3
     embedding_retry_base_delay_seconds: float = 0.5
     openai_api_key: str | None = None
+    conversation_model: str = "gpt-4o-mini"
     vector_store_provider: str = VectorStoreProviderName.NULL.value
     vector_store_table: str = "embedding_vectors"
     metrics_recorder_provider: str = MetricsRecorderName.LOGGING.value
