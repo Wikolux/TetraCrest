@@ -110,6 +110,18 @@ A capability's CRL is never advanced by intention, estimate, or partial credit �
 
 | Field | Value |
 |---|---|
+| **Name** | Execution Ledger |
+| **Current CRL** | CRL-3 — Minimal, scoped implementation (not a general recovery platform) |
+| **Status** | First durable, pre-commit operational execution record shipped P7.16: `ExecutionRecord` (`execution_records` table) is written `STARTED` and committed before either external call in `/api/v1/research/lookup` (Wikipedia, OpenAI) is attempted, then updated to exactly one immutable terminal status (`SUCCEEDED`/`FAILED`). A record left at `STARTED` after an interruption is the intentional, honest signal that no terminal outcome was durably recorded — it does not itself prove or disprove that an external side effect occurred. Deliberately separate from `AuditLog` (supplementary, historical, write-once provenance, now carrying the same `execution_id`/`correlation_id` in its `details`) — `ExecutionRecord` is the one place holding *current* operational state. |
+| **Owner Pack** | None — platform-owned |
+| **Dependencies** | Shared substrate (`SharedExecutionContext`), Tool Framework, Runtime |
+| **Blocking Items** | No idempotency enforcement, no retry-safety guarantee, and no automatic recovery/reconciliation exist yet — `list_non_terminal()` makes stranded records discoverable, but nothing acts on them. All three remain explicit prerequisites for any write-capable tool. |
+| **Next Milestone** | Unscheduled — candidates are idempotency keys, a reconciliation/recovery consumer of `list_non_terminal()`, or richer per-attempt (not just root-execution) provenance |
+| **Known Risks** | A failure to commit a terminal update or an audit row must never (and, per P7.16's own tests, does not) discard an already-produced successful result from reaching the client — proven directly, not merely asserted |
+| **Version Target** | v1.0 scope; first durable execution record shipped P7.16 |
+
+| Field | Value |
+|---|---|
 | **Name** | Vision Framework |
 | **Current CRL** | CRL-5 — Released (as scoped) |
 | **Status** | Contract, four capability services, runtime/executor fully complete (ADR-0005). Zero concrete providers registered — intentional. |

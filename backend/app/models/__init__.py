@@ -16,6 +16,7 @@ from app.models.life_domain_state_record import LifeDomainStateRecord
 from app.models.mission_record import MissionRecord
 from app.models.day_event_record import DayEventRecord
 from app.models.adaptation_record import AdaptationRecord
+from app.models.execution_record import ExecutionRecord
 
 __all__ = [
     "Organization",
@@ -36,4 +37,5 @@ __all__ = [
     "MissionRecord",
     "DayEventRecord",
     "AdaptationRecord",
+    "ExecutionRecord",
 ]
