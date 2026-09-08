@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.sql import func
 
 from database import Base
@@ -22,9 +22,21 @@ class DayEventRecord(Base):
     JSON, since DayMode has no nested/variable-length content worth a
     serialized blob (matching PatternRecord's own "confidence" column -
     a simple value gets a simple column, JSON is reserved for genuinely
-    nested content elsewhere in this package)."""
+    nested content elsewhere in this package).
+
+    P7.17: the composite unique constraint below guards the one real
+    concurrency gap Phase 0 found in SqlDayEventRepository.append()
+    (get_max_sequence() then insert is a read-then-write race with no
+    lock) - it changes no public interface and no sequence-assignment
+    logic, it only converts a silent ordering corruption on a genuine
+    concurrent collision into a loud, catchable IntegrityError for the
+    losing write. Not a substitute for real concurrency control - a
+    small, additive safety net, approved as such before being applied."""
 
     __tablename__ = "day_event_records"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "user_id", "day_date", "sequence", name="uq_day_event_records_org_user_day_sequence"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)

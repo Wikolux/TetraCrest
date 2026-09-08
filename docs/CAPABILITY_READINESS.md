@@ -156,6 +156,18 @@ A capability's CRL is never advanced by intention, estimate, or partial credit �
 | **Known Risks** | None currently tracked |
 | **Version Target** | v1.0 (shipped) |
 
+| Field | Value |
+|---|---|
+| **Name** | Personal OS (Application Layer) |
+| **Current CRL** | CRL-3 — Building (calibration note: Personal OS follows its own numbered build-spec process, not the Capability Pack Development Guide's exact nine phases — this CRL is reported by analogy, not by a formal Architecture Readiness Review or Release Candidate gate) |
+| **Status** | An Application, not a Capability Pack (registers no `SpecialistAgent`, declares no `AgentCapability`, mints no Memory Framework namespace — architecturally enforced, `test_personal_os_architecture.py`). P1 through P7.16 built a complete, tested daily-operating-system domain model (Daily Intent, Personal State, Adaptive Planning, Intelligence Brief, Evening Reflection, Pattern Intelligence, Experimentation, Life Domains, Missions, Living Day event log, Continuous Replanning, Conversational Day Interaction, Controlled Adaptation, Runtime Adaptation, Outcome Measurement) with real SQL-backed persistence throughout, entirely reachable only through direct Python calls until P7.17. **P7.17 shipped Personal OS's first production API surface** — five authenticated HTTP endpoints (`GET /today`, `POST /today/intent`, `POST /today/interact`, `POST /today/reflect`, `GET /brief`) exposing the daily lifecycle end to end, composing the existing flows with zero new Personal OS intelligence. |
+| **Owner Pack** | None — platform-owned Application |
+| **Dependencies** | RuntimeAdapter/AIRuntime (narration only, via the sanctioned seam every specialist also uses), AgentMemory (Personal State's own read path) |
+| **Blocking Items** | Pattern/Experiment/Adaptation decision endpoints (confirm/reject/approve/adopt/rollback) remain unexposed — the only way that intelligence has ever been triggered by a real human decision today is a test fixture calling a flow method directly; per-user timezone support does not exist (P7.17's `resolve_personal_os_today()` assumes a single UTC calendar date for every user) |
+| **Next Milestone** | Exposing the Pattern/Experiment/Adaptation decision surface, per the P7.17 audit's own ranking |
+| **Known Risks** | `SqlDayEventRepository.append()`'s read-then-insert sequence assignment is guarded by a database uniqueness constraint (P7.17) but not by real concurrency control (no lock, no retry) — acceptable for a single-human-operating-their-own-day product, not for high-concurrency multi-writer use |
+| **Version Target** | Daily-lifecycle API shipped (P7.17); decision-surface API unscheduled |
+
 ### Capability Packs
 
 | Field | Value |

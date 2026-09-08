@@ -8,16 +8,18 @@ is a caller of the platform, not a reimplementation of any part of it.
 `test_personal_os_architecture.py::test_morning_flow_never_bypasses_the_runtime`
 verifies this structurally.
 
-Free-form intent parsing is honestly heuristic, not real NLU - no LLM
-provider is registered anywhere on this platform (a known, documented
-Version 1 limitation, VERSION_1_PLATFORM_BASELINE.md). Every field this
-flow extracts from user text is tagged IntentSource.HEURISTIC_PARSE with
-Confidence.LOW/MEDIUM, never HIGH, so nothing downstream mistakes a
-keyword match for genuine understanding. The Runtime call this flow makes
-is for the conversational acknowledgment (a real, working integration
-point), not for the structured extraction itself - replacing the
-heuristic with real structured NLU, once available, changes only
-_parse_free_text()'s own implementation, not this flow's shape.
+Free-form intent parsing is honestly heuristic, not real NLU - this is a
+deliberate, unrelated design choice (P7.14 registered a real OpenAI
+ConversationProvider, but that only makes the Runtime call below capable
+of real narration; it says nothing about how this flow classifies day
+type or continuation itself). Every field this flow extracts from user
+text is tagged IntentSource.HEURISTIC_PARSE with Confidence.LOW/MEDIUM,
+never HIGH, so nothing downstream mistakes a keyword match for genuine
+understanding. The Runtime call this flow makes is for the conversational
+acknowledgment (a real, working integration point since P7.14), not for
+the structured extraction itself - replacing the heuristic with real
+structured NLU, once desired, changes only _parse_free_text()'s own
+implementation, not this flow's shape.
 """
 
 from dataclasses import dataclass
