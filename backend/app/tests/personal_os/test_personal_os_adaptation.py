@@ -31,6 +31,7 @@ def test_adaptation_defaults_to_proposed():
     assert adaptation.status == AdaptationStatus.PROPOSED
     assert adaptation.supersedes_adaptation_id is None
     assert adaptation.experiment_id is None
+    assert adaptation.outcome_experiment_id is None
 
 
 # --- governance boundary (§10): AdaptationScope cannot represent governed configuration -----------

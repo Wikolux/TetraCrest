@@ -27,6 +27,7 @@ from app.services.ai.shared.execution_context import SharedExecutionContext
 from app.services.context.types import ContextItem, ContextPackage, ContextSection
 from app.services.prompt_builder.builder import PromptBuilder
 from app.services.personal_os.adaptation import Adaptation, AdaptationEffect, AdaptationTarget
+from app.services.personal_os.adaptation_outcome import earliest_measurable_start, resolve_adopted_at
 from app.services.personal_os.adaptation_repository import AdaptationRepository
 from app.services.personal_os.experiment import Experiment
 from app.services.personal_os.pattern import Pattern
@@ -148,6 +149,51 @@ class AdaptationFlow:
         if experiment.pattern_id != adaptation.pattern_id:
             raise ValueError("link_experiment() requires an experiment measuring the same pattern this adaptation is based on")
         return self._save(organization_id, user_id, replace(adaptation, experiment_id=experiment.experiment_id))
+
+    # --- post-adoption outcome measurement (P7.12) -------------------------------------------------
+
+    def link_outcome_experiment(self, adaptation: Adaptation, *, organization_id: int, user_id: int, experiment: Experiment) -> Adaptation:
+        """P7.12: the explicit, durable relationship between an ADOPTED
+        Adaptation and the Experiment measuring what happened AFTER it
+        was adopted - deliberately a SEPARATE field from `experiment_id`,
+        never overloaded: `experiment_id` (above) means the pre-adoption
+        evaluation that informed the approve()/adopt() decision -
+        `link_experiment()`'s own UNDER_EVALUATION gate makes that
+        meaning structural, not just documented. Reusing that same field
+        for a second, later Experiment answering a different question
+        ("did the adopted change help?") would make one field mean two
+        different things depending on when it was set - so
+        `outcome_experiment_id` exists instead, gated the other way
+        (requires ADOPTED, since there is nothing to measure the outcome
+        of before then).
+
+        Requires the same pattern_id match `link_experiment()` already
+        requires, plus the one guarantee P7.12 exists for: this
+        Experiment's own `started_on` must fall on or after the day
+        immediately following this Adaptation's own ADOPTED transition
+        (resolve_adopted_at()/earliest_measurable_start(),
+        adaptation_outcome.py) - enforced HERE, structurally, regardless
+        of how the Experiment was constructed or by which caller, so
+        pre-adoption evidence can never be counted as this Adaptation's
+        own post-adoption result."""
+        _require_status(adaptation, AdaptationStatus.ADOPTED, "link_outcome_experiment")
+        if experiment.pattern_id != adaptation.pattern_id:
+            raise ValueError("link_outcome_experiment() requires an experiment measuring the same pattern this adaptation is based on")
+
+        history = self.adaptation_repository.get_history(organization_id=organization_id, user_id=user_id, adaptation_id=adaptation.adaptation_id)
+        adopted_at = resolve_adopted_at(history)
+        if adopted_at is None:
+            raise ValueError("link_outcome_experiment() requires this adaptation to have an ADOPTED version in its own history")
+
+        earliest_start = earliest_measurable_start(adopted_at)
+        if experiment.started_on < earliest_start:
+            raise ValueError(
+                f"link_outcome_experiment() requires experiment.started_on >= {earliest_start} (the day after "
+                f"adoption), got {experiment.started_on} - pre-adoption evidence must never be counted as this "
+                "adaptation's own post-adoption result"
+            )
+
+        return self._save(organization_id, user_id, replace(adaptation, outcome_experiment_id=experiment.experiment_id))
 
     @staticmethod
     def measured_outcome(experiment: Experiment | None) -> ExperimentOutcome | None:

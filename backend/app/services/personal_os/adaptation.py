@@ -14,6 +14,12 @@ what nothing else already owns:
 - Measurement already lives on Experiment (`experiment_id`, optional -
   linked via adaptation_flow.link_experiment() once a real evaluation is
   run; Adaptation never computes its own baseline/comparison).
+  `outcome_experiment_id` (P7.12) is a deliberately SEPARATE, narrowly
+  scoped reference to a second, later Experiment - the one measuring
+  what happened AFTER adoption, never conflated with the pre-adoption
+  evaluation `experiment_id` already means (see
+  adaptation_flow.link_outcome_experiment()'s own docstring for exactly
+  why one field cannot honestly serve both purposes).
 - What Adaptation owns, and nothing else in this package does: SCOPE
   (AdaptationTarget - which user/mission/workflow this affects, so an
   adaptation can never silently affect an unrelated one), a LIFECYCLE of
@@ -106,6 +112,7 @@ class Adaptation:
     confidence: Confidence
     expected_outcome: str = ""
     experiment_id: str | None = None
+    outcome_experiment_id: str | None = None
     status: AdaptationStatus = AdaptationStatus.PROPOSED
     supersedes_adaptation_id: str | None = None
     decision_reason: str = ""

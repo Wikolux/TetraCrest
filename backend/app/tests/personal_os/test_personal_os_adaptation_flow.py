@@ -3,13 +3,13 @@ evidence gate, duplicate-proposal idempotency, the approval boundary,
 adoption/rollback/supersession, scope isolation, and the safety
 guarantee that rejected proposals never alter active behavior."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 
 from app.services.ai.agents.specialists.runtime_adapter import RuntimeAdapter
 from app.services.ai.runtime.types import RuntimeResponse
-from app.services.personal_os.adaptation import AdaptationEffect, AdaptationTarget
+from app.services.personal_os.adaptation import Adaptation, AdaptationEffect, AdaptationTarget
 from app.services.personal_os.adaptation_flow import AdaptationFlow
 from app.services.personal_os.adaptation_repository import InMemoryAdaptationRepository
 from app.services.personal_os.experiment import Experiment, ExperimentBaseline, ExperimentComparison, ExperimentMeasurement
@@ -345,12 +345,25 @@ def test_workflow_adaptation_remains_workflow_scoped():
 # --- measurement linking (§14) ------------------------------------------------------------------------
 
 
-def _experiment(pattern_id="p1", status=ExperimentStatus.PROPOSED, comparison=None):
+def _experiment(pattern_id="p1", status=ExperimentStatus.PROPOSED, comparison=None, started_on=date(2026, 7, 16)):
     baseline = ExperimentBaseline(metric="postponement_count", category="learning", period_start=date(2026, 7, 1), period_end=date(2026, 7, 14), value=4.0, observation_count=4)
     return Experiment(
         experiment_id="e1", pattern_id=pattern_id, hypothesis_statement="h", adjustment="Add a buffer", measurement_plan="m",
-        baseline=baseline, started_on=date(2026, 7, 16), status=status, comparison=comparison,
+        baseline=baseline, started_on=started_on, status=status, comparison=comparison,
     )
+
+
+def _seed_adopted(repo, *, pattern_id="p1", target=None, adopted_at, experiment_id=None):
+    """Directly seeds an ADOPTED Adaptation with a controlled
+    `updated_at` - AdaptationFlow.adopt() always stamps `datetime.now()`,
+    so backdating the adoption instant for a deterministic test requires
+    writing the repository-level record directly, exactly like
+    test_personal_os_priority_flow.py's own `_adopted()` precedent."""
+    adaptation = Adaptation(
+        adaptation_id="", target=target or _target(), pattern_id=pattern_id, confidence=Confidence.MEDIUM,
+        status=AdaptationStatus.ADOPTED, experiment_id=experiment_id, updated_at=adopted_at,
+    )
+    return repo.save(adaptation, organization_id=ORG_ID, user_id=USER_ID)
 
 
 def test_link_experiment_requires_under_evaluation():
@@ -467,3 +480,83 @@ def test_relearn_can_carry_a_new_effect_replacing_the_predecessors():
     second = flow.adopt(second, organization_id=ORG_ID, user_id=USER_ID)
 
     assert flow.get_adopted(organization_id=ORG_ID, user_id=USER_ID, target=domain_target).effect == suppress
+
+
+# --- link_outcome_experiment (P7.12): the explicit, durable post-adoption relationship ---------------
+
+
+def test_link_outcome_experiment_requires_adopted():
+    flow, _ = _flow()
+    proposed = flow.propose(_pattern(pattern_id="p1"), organization_id=ORG_ID, user_id=USER_ID, target=_target())
+    with pytest.raises(ValueError):
+        flow.link_outcome_experiment(proposed, organization_id=ORG_ID, user_id=USER_ID, experiment=_experiment())
+
+
+def test_link_outcome_experiment_requires_matching_pattern():
+    flow, repo = _flow()
+    adopted = _seed_adopted(repo, pattern_id="p1", adopted_at=datetime(2026, 7, 15, tzinfo=UTC))
+    with pytest.raises(ValueError):
+        flow.link_outcome_experiment(adopted, organization_id=ORG_ID, user_id=USER_ID, experiment=_experiment(pattern_id="different-pattern", started_on=date(2026, 7, 20)))
+
+
+def test_link_outcome_experiment_rejects_an_experiment_starting_on_the_adoption_day():
+    """The adoption day itself is deliberately excluded from
+    measurement (earliest_measurable_start()'s own precision boundary) -
+    an experiment starting the SAME day adoption happened cannot
+    honestly claim to measure only post-adoption behavior."""
+    flow, repo = _flow()
+    adopted = _seed_adopted(repo, pattern_id="p1", adopted_at=datetime(2026, 7, 15, tzinfo=UTC))
+    with pytest.raises(ValueError):
+        flow.link_outcome_experiment(adopted, organization_id=ORG_ID, user_id=USER_ID, experiment=_experiment(pattern_id="p1", started_on=date(2026, 7, 15)))
+
+
+def test_link_outcome_experiment_rejects_an_experiment_starting_before_adoption():
+    flow, repo = _flow()
+    adopted = _seed_adopted(repo, pattern_id="p1", adopted_at=datetime(2026, 7, 15, tzinfo=UTC))
+    with pytest.raises(ValueError):
+        flow.link_outcome_experiment(adopted, organization_id=ORG_ID, user_id=USER_ID, experiment=_experiment(pattern_id="p1", started_on=date(2026, 7, 10)))
+
+
+def test_link_outcome_experiment_accepts_an_experiment_starting_the_day_after_adoption():
+    flow, repo = _flow()
+    adopted = _seed_adopted(repo, pattern_id="p1", adopted_at=datetime(2026, 7, 15, tzinfo=UTC))
+    linked = flow.link_outcome_experiment(adopted, organization_id=ORG_ID, user_id=USER_ID, experiment=_experiment(pattern_id="p1", started_on=date(2026, 7, 16)))
+    assert linked.outcome_experiment_id == "e1"
+
+
+def test_link_outcome_experiment_never_overwrites_or_loses_the_preadoption_experiment_id():
+    """§2's own design goal, proven directly: `experiment_id` (the
+    pre-adoption evaluation) and `outcome_experiment_id` (the
+    post-adoption measurement) are two separate fields - linking one
+    never touches, overwrites, or erases the other, and both remain
+    independently recoverable from full history."""
+    flow, repo = _flow()
+    adopted = _seed_adopted(repo, pattern_id="p1", adopted_at=datetime(2026, 7, 15, tzinfo=UTC), experiment_id="pre-eval-exp")
+    linked = flow.link_outcome_experiment(adopted, organization_id=ORG_ID, user_id=USER_ID, experiment=_experiment(pattern_id="p1", started_on=date(2026, 7, 16)))
+
+    assert linked.experiment_id == "pre-eval-exp"
+    assert linked.outcome_experiment_id == "e1"
+
+    history = repo.get_history(organization_id=ORG_ID, user_id=USER_ID, adaptation_id=adopted.adaptation_id)
+    assert history[0].experiment_id == "pre-eval-exp"
+    assert history[0].outcome_experiment_id is None
+    assert history[-1].experiment_id == "pre-eval-exp"
+    assert history[-1].outcome_experiment_id == "e1"
+
+
+def test_link_outcome_experiment_requires_an_adopted_version_in_history():
+    """A defensive guard, not reachable through the ordinary flow (every
+    ADOPTED adaptation has an ADOPTED version by construction) - kept as
+    an explicit check rather than assuming get_history() always contains
+    one."""
+    flow, repo = _flow()
+    # Construct an ADOPTED adaptation whose history somehow contains no ADOPTED version -
+    # only possible by writing directly to a fresh repository under a fabricated id.
+    from app.services.personal_os.adaptation_repository import InMemoryAdaptationRepository
+
+    isolated_repo = InMemoryAdaptationRepository()
+    orphan_flow = AdaptationFlow(isolated_repo)
+    fabricated = Adaptation(adaptation_id="ghost", target=_target(), pattern_id="p1", confidence=Confidence.MEDIUM, status=AdaptationStatus.ADOPTED)
+    # Note: history is empty because this object was never actually saved via the repository.
+    with pytest.raises(ValueError):
+        orphan_flow.link_outcome_experiment(fabricated, organization_id=ORG_ID, user_id=USER_ID, experiment=_experiment(pattern_id="p1", started_on=date(2026, 7, 20)))

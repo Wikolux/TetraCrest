@@ -28,6 +28,7 @@ class AdaptationRecord(Base):
     confidence = Column(String(20), nullable=False)
     expected_outcome = Column(Text, nullable=False, default="")
     experiment_id = Column(String(64), nullable=True)
+    outcome_experiment_id = Column(String(64), nullable=True)
     status = Column(String(30), nullable=False, index=True)
     supersedes_adaptation_id = Column(String(64), nullable=True)
     decision_reason = Column(Text, nullable=False, default="")

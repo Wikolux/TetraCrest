@@ -687,6 +687,24 @@ def test_adaptation_with_no_effect_round_trips_as_none(db_session):
     assert fetched.effect is None
 
 
+def test_adaptation_outcome_experiment_id_round_trips(db_session):
+    """P7.12: the explicit, durable relationship to a post-adoption
+    outcome experiment survives persistence - separate from, and never
+    overwriting, `experiment_id` (the pre-adoption evaluation)."""
+    from dataclasses import replace
+
+    repo = SqlAdaptationRepository(db_session)
+    saved = repo.save(_adaptation(experiment_id="pre-eval-exp"), organization_id=1, user_id=2)
+    updated = repo.save(replace(saved, outcome_experiment_id="post-adopt-exp"), organization_id=1, user_id=2)
+    db_session.expire_all()
+
+    history = repo.get_history(organization_id=1, user_id=2, adaptation_id=updated.adaptation_id)
+    assert history[0].experiment_id == "pre-eval-exp"
+    assert history[0].outcome_experiment_id is None
+    assert history[-1].experiment_id == "pre-eval-exp"
+    assert history[-1].outcome_experiment_id == "post-adopt-exp"
+
+
 def test_adaptation_survives_a_fresh_session(db_engine):
     from sqlalchemy.orm import sessionmaker
 
@@ -883,3 +901,110 @@ def test_real_path_adopted_priority_effect_changes_living_ranking_across_a_fresh
 
     restored_score = _ranking_via_fresh_session()
     assert restored_score.item.momentum == 0.0
+
+
+def test_real_path_adaptation_outcome_measured_and_restart_safe_across_fresh_sessions(db_session, db_engine):
+    """P7.12: extends the P7.10/P7.11 real-path precedent one step
+    further - real Pattern confirmation -> real Adaptation adoption ->
+    a real, evidence-backed pre-adoption baseline -> the explicit,
+    durable outcome_experiment_id relationship -> a real post-adoption
+    measurement and causality-safe comparison -> all read back through a
+    COMPLETELY FRESH session, proving restart safety end to end (P7.12
+    §15/§17)."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.services.personal_os.adaptation_outcome_flow import AdaptationOutcomeFlow
+    from app.services.personal_os.experiment_flow import ExperimentFlow
+    from app.services.personal_os.pattern_evidence import EvidenceWindow
+    from app.services.personal_os.shared.types import ExperimentOutcome
+    from app.services.personal_os.sql_repository import SqlExperimentRepository
+
+    intent_repo = InMemoryDailyIntentRepository()
+    evening_repo = InMemoryEveningReflectionRepository()
+    pattern_repo = SqlPatternRepository(db_session)
+    adaptation_repo = SqlAdaptationRepository(db_session)
+    experiment_repo = SqlExperimentRepository(db_session)
+
+    org_id, user_id = 1, 13
+    today = datetime.now(UTC).date()
+    # within PatternDetectionFlow.detect()'s own default trailing-14-day window from `today`,
+    # so detect() actually confirms a pattern from this same evidence.
+    baseline_dates = [today - timedelta(days=d) for d in (10, 8, 6, 4)]
+    post_adoption_dates = [today + timedelta(days=d) for d in (2, 4, 6, 8)]
+
+    for d in baseline_dates:
+        activity = PlannedActivity(description="Study transformers", focus_area="learning")
+        intent = DailyIntent(intent_date=d, stated_intention="Study", day_type=DayType.STUDY, planned_activities=(activity,))
+        intent_repo.save(intent, organization_id=org_id, user_id=user_id)
+        evidence = {activity.description: ReconciliationEvidence(explicitly_postponed=True, note="ran out of time")}
+        reflection = EveningReflection(reflection_date=d, accomplishments=(), evidence_by_activity_description=evidence)
+        reconciliations = reconcile_all((activity,), evidence)
+        evening_repo.save(reflection, reconciliations, organization_id=org_id, user_id=user_id, daily_intent_id=intent.intent_id)
+
+    pattern_flow = PatternDetectionFlow(intent_repo, evening_repo, pattern_repo)
+    pattern_flow.detect(organization_id=org_id, user_id=user_id, today=today)
+    surfacing = pattern_flow.surface_next(organization_id=org_id, user_id=user_id)
+    confirmed = pattern_flow.respond(organization_id=org_id, user_id=user_id, pattern=surfacing.pattern, response=UserPatternResponse.CONFIRM)
+    recommendation = GrowthRecommendation(statement="Prioritize learning work earlier in the day.", responds_to=confirmed.possible_hypotheses[0])
+    with_recommendation = pattern_flow.attach_recommendation(organization_id=org_id, user_id=user_id, pattern=confirmed, recommendation=recommendation)
+
+    adaptation_flow = AdaptationFlow(adaptation_repo)
+    target = AdaptationTarget(scope=AdaptationScope.USER_PREFERENCE, target_id=LifeDomain.STUDY.value)
+    proposed = adaptation_flow.propose(with_recommendation, organization_id=org_id, user_id=user_id, target=target)
+    approved = adaptation_flow.approve(proposed, organization_id=org_id, user_id=user_id, reason="Evidence is clear")
+    adopted = adaptation_flow.adopt(approved, organization_id=org_id, user_id=user_id)
+    db_session.commit()
+
+    outcome_flow = AdaptationOutcomeFlow(
+        adaptation_repo, adaptation_flow, pattern_flow, ExperimentFlow(intent_repo, evening_repo, experiment_repo), experiment_repo
+    )
+    linked = outcome_flow.propose_outcome_experiment(
+        adopted, organization_id=org_id, user_id=user_id, pattern=with_recommendation, hypothesis_statement="h",
+        adjustment="Prioritize learning work earlier in the day.", measurement_plan="m", metric="postponement_count", category="learning",
+        baseline_window=EvidenceWindow(baseline_dates[0], baseline_dates[-1]),
+    )
+    db_session.commit()
+
+    for d in post_adoption_dates[:3]:
+        activity = PlannedActivity(description="Study transformers", focus_area="learning")
+        intent = DailyIntent(intent_date=d, stated_intention="Study", day_type=DayType.STUDY, planned_activities=(activity,))
+        intent_repo.save(intent, organization_id=org_id, user_id=user_id)
+        evidence = {activity.description: ReconciliationEvidence(explicitly_completed=True)}
+        reflection = EveningReflection(reflection_date=d, accomplishments=(), evidence_by_activity_description=evidence)
+        reconciliations = reconcile_all((activity,), evidence)
+        evening_repo.save(reflection, reconciliations, organization_id=org_id, user_id=user_id, daily_intent_id=intent.intent_id)
+    d = post_adoption_dates[3]
+    activity = PlannedActivity(description="Study transformers", focus_area="learning")
+    intent = DailyIntent(intent_date=d, stated_intention="Study", day_type=DayType.STUDY, planned_activities=(activity,))
+    intent_repo.save(intent, organization_id=org_id, user_id=user_id)
+    evidence = {activity.description: ReconciliationEvidence(explicitly_postponed=True)}
+    reflection = EveningReflection(reflection_date=d, accomplishments=(), evidence_by_activity_description=evidence)
+    reconciliations = reconcile_all((activity,), evidence)
+    evening_repo.save(reflection, reconciliations, organization_id=org_id, user_id=user_id, daily_intent_id=intent.intent_id)
+
+    # a completely fresh session, independent of the one that wrote everything above
+    from sqlalchemy.orm import sessionmaker
+
+    fresh_session = sessionmaker(bind=db_engine, autocommit=False, autoflush=False)()
+    fresh_adaptation_repo = SqlAdaptationRepository(fresh_session)
+    fresh_experiment_repo = SqlExperimentRepository(fresh_session)
+    fresh_pattern_repo = SqlPatternRepository(fresh_session)
+    fresh_pattern_flow = PatternDetectionFlow(intent_repo, evening_repo, fresh_pattern_repo)
+    fresh_adaptation_flow = AdaptationFlow(fresh_adaptation_repo)
+    fresh_outcome_flow = AdaptationOutcomeFlow(
+        fresh_adaptation_repo, fresh_adaptation_flow, fresh_pattern_flow, ExperimentFlow(intent_repo, evening_repo, fresh_experiment_repo), fresh_experiment_repo
+    )
+
+    rediscovered = fresh_adaptation_repo.get_latest(organization_id=org_id, user_id=user_id, adaptation_id=linked.adaptation_id)
+    assert rediscovered.outcome_experiment_id == linked.outcome_experiment_id
+    assert rediscovered.experiment_id is None  # no pre-adoption evaluation experiment was ever linked - never fabricated
+
+    review = fresh_outcome_flow.review_outcome(rediscovered, organization_id=org_id, user_id=user_id, today=today + timedelta(days=9))
+    fresh_session.commit()
+
+    assert review.experiment.comparison.outcome == ExperimentOutcome.IMPROVED
+    assert review.experiment.comparison.baseline.observation_count == 4
+    assert review.experiment.comparison.measurement.observation_count == 4
+    assert review.is_currently_adopted is True
+    assert "causality has not been established" in review.recommendation
+    fresh_session.close()

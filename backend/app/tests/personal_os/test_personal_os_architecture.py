@@ -63,6 +63,8 @@ _PERSONAL_OS_MODULES = (
     "app.services.personal_os.adaptation",
     "app.services.personal_os.adaptation_repository",
     "app.services.personal_os.adaptation_flow",
+    "app.services.personal_os.adaptation_outcome",
+    "app.services.personal_os.adaptation_outcome_flow",
 )
 
 _FORBIDDEN_SPECIALIST_FRAGMENTS = (
@@ -457,6 +459,69 @@ def test_living_day_flow_gained_no_adaptation_specific_logic():
     assert not any("adaptation" in name for name in imported), "living_day_flow.py must not import any adaptation module directly - it inherits behavior only through priority_flow.py"
     assert "AdaptationEffect" not in source
     assert "AdaptationRepository" not in source
+
+
+def test_adaptation_outcome_modules_do_not_touch_the_runtime():
+    """P7.12: resolving the adoption boundary and mapping an
+    ExperimentOutcome to a plain recommendation must stay exactly as
+    deterministic as experiment_measurement.py's own comparison math -
+    no generative call anywhere near it."""
+    for module_path in ("app.services.personal_os.adaptation_outcome", "app.services.personal_os.adaptation_outcome_flow"):
+        imported = _imported_modules(module_path)
+        assert not any("runtime_adapter" in name or "prompt_builder" in name for name in imported), (
+            f"{module_path} imports a Runtime/PromptBuilder seam - this module must remain deterministic"
+        )
+
+
+def test_no_second_experiment_pattern_or_measurement_system_for_outcomes():
+    """P7.12's own explicit prohibition: no AdaptationMeasurement/
+    AdaptationComparison/FeedbackEngine - Experiment already owns
+    measurement, Pattern already owns evidence. Verified structurally,
+    not just by code review, that neither adaptation_outcome.py nor
+    adaptation_outcome_flow.py redefines any of Experiment's own types,
+    and that no competing module/package exists under personal_os/."""
+    import app.services.personal_os as personal_os_package
+
+    package_dir = Path(personal_os_package.__file__).resolve().parent
+    forbidden_names = ("adaptation_measurement.py", "adaptation_comparison.py", "feedback_engine.py", "adaptation_analytics.py")
+    existing_names = {p.name for p in package_dir.iterdir()}
+    for forbidden in forbidden_names:
+        assert forbidden not in existing_names, f"a competing measurement module {forbidden!r} exists - Experiment must remain the only measurement mechanism"
+
+    for module_path in ("app.services.personal_os.adaptation_outcome", "app.services.personal_os.adaptation_outcome_flow"):
+        source = inspect.getsource(importlib.import_module(module_path))
+        forbidden_class_defs = ("class ExperimentBaseline", "class ExperimentMeasurement", "class ExperimentComparison", "class PatternEvidenceItem")
+        for fragment in forbidden_class_defs:
+            assert fragment not in source, f"{module_path} redefines {fragment!r} - measurement must be reused from Experiment, never duplicated"
+
+
+def test_adaptation_outcome_flow_never_automatically_decides():
+    """P7.12 §12/§19: outcome review may observe, measure, compare, and
+    recommend - it must never itself execute a consequential action.
+    Verified structurally: adaptation_outcome_flow.py never calls
+    AdaptationFlow's own rollback()/retire()/reject()/propose_relearn(),
+    nor ExperimentFlow's own decide() - every one of those remains an
+    explicit, separately-invoked, human-governed call."""
+    source = inspect.getsource(importlib.import_module("app.services.personal_os.adaptation_outcome_flow"))
+    forbidden_calls = (
+        "adaptation_flow.rollback(",
+        "adaptation_flow.propose_relearn(",
+        "adaptation_flow.retire(",
+        "adaptation_flow.reject(",
+        "experiment_flow.decide(",
+    )
+    for fragment in forbidden_calls:
+        assert fragment not in source, f"adaptation_outcome_flow.py calls {fragment!r} - outcome review must only observe/measure/recommend, never decide automatically"
+
+
+def test_link_outcome_experiment_is_a_separate_field_from_experiment_id():
+    """P7.12 §2's own design resolution, verified structurally:
+    `outcome_experiment_id` exists as its own field on Adaptation,
+    distinct from `experiment_id` - one field is never overloaded to
+    mean two different things depending on when it was set."""
+    source = inspect.getsource(importlib.import_module("app.services.personal_os.adaptation"))
+    assert "outcome_experiment_id" in source
+    assert "experiment_id: str | None = None" in source
 
 
 def test_personal_os_package_lives_outside_the_frozen_ai_operating_system():
