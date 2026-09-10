@@ -375,3 +375,142 @@ def test_current_date_comes_from_the_authoritative_resolver_not_the_body(client,
     )
     assert response.status_code == 200
     assert response.json()["intent"]["intent_date"] == _today()
+
+
+# --- P7.19: STRUCTURED PLANNED ACTIVITY CAPTURE ----------------------------------------------------
+
+
+def test_text_only_intent_request_remains_backward_compatible(client, org_id, token):
+    """No planned_activities field at all - the exact pre-P7.19 request
+    shape - must still succeed with the pre-P7.19 empty-activities
+    result on a first-time day."""
+    response = client.post("/api/v1/personal-os/today/intent", json={"text": "Work day"}, headers=_headers(token))
+    assert response.status_code == 200
+    assert response.json()["intent"]["planned_activities"] == []
+
+
+def test_structured_planned_activities_persist_into_daily_intent(client, org_id, token, db_session):
+    response = client.post(
+        "/api/v1/personal-os/today/intent",
+        json={
+            "text": "Focused work day",
+            "planned_activities": [
+                {"description": "Write the quarterly report", "focus_area": "delivery", "estimated_hours": 3.0},
+                {"description": "Review the budget", "deadline": "2026-12-31"},
+            ],
+        },
+        headers=_headers(token),
+    )
+    assert response.status_code == 200
+    body = response.json()["intent"]["planned_activities"]
+    assert [a["description"] for a in body] == ["Write the quarterly report", "Review the budget"]
+    assert body[0]["focus_area"] == "delivery"
+    assert body[0]["estimated_hours"] == 3.0
+    assert body[1]["deadline"] == "2026-12-31"
+
+    record = db_session.query(DailyIntentRecord).filter(DailyIntentRecord.organization_id == org_id).one()
+    assert "Write the quarterly report" in record.planned_activities_json
+
+
+def test_explicit_empty_planned_activities_list_is_accepted_and_distinct_from_omission(client, org_id, token):
+    response = client.post(
+        "/api/v1/personal-os/today/intent", json={"text": "Rest day, nothing planned", "planned_activities": []}, headers=_headers(token)
+    )
+    assert response.status_code == 200
+    assert response.json()["intent"]["planned_activities"] == []
+
+
+def test_missing_description_returns_422(client, org_id, token):
+    response = client.post(
+        "/api/v1/personal-os/today/intent", json={"text": "Work day", "planned_activities": [{"focus_area": "delivery"}]}, headers=_headers(token)
+    )
+    assert response.status_code == 422
+
+
+def test_empty_description_returns_422(client, org_id, token):
+    response = client.post(
+        "/api/v1/personal-os/today/intent", json={"text": "Work day", "planned_activities": [{"description": ""}]}, headers=_headers(token)
+    )
+    assert response.status_code == 422
+
+
+def test_non_positive_estimated_hours_returns_422(client, org_id, token):
+    response = client.post(
+        "/api/v1/personal-os/today/intent",
+        json={"text": "Work day", "planned_activities": [{"description": "x", "estimated_hours": 0}]},
+        headers=_headers(token),
+    )
+    assert response.status_code == 422
+
+
+def test_invalid_deadline_shape_returns_422(client, org_id, token):
+    response = client.post(
+        "/api/v1/personal-os/today/intent",
+        json={"text": "Work day", "planned_activities": [{"description": "x", "deadline": "not-a-date"}]},
+        headers=_headers(token),
+    )
+    assert response.status_code == 422
+
+
+def test_unknown_activity_field_is_silently_ignored_matching_project_convention(client, org_id, token):
+    """Matches this project's existing schema policy (Pydantic's default
+    - ignore, never forbid, unknown fields), the same convention already
+    relied on for the organization_id/user_id body-immutability tests."""
+    response = client.post(
+        "/api/v1/personal-os/today/intent",
+        json={"text": "Work day", "planned_activities": [{"description": "x", "priority_score": 99, "status": "done"}]},
+        headers=_headers(token),
+    )
+    assert response.status_code == 200
+    assert response.json()["intent"]["planned_activities"][0]["description"] == "x"
+
+
+def test_duplicate_activity_descriptions_are_preserved_not_deduplicated(client, org_id, token):
+    """PlannedActivity has no uniqueness constraint of its own - P7.19
+    invents none."""
+    response = client.post(
+        "/api/v1/personal-os/today/intent",
+        json={"text": "Work day", "planned_activities": [{"description": "Same task"}, {"description": "Same task"}]},
+        headers=_headers(token),
+    )
+    assert response.status_code == 200
+    descriptions = [a["description"] for a in response.json()["intent"]["planned_activities"]]
+    assert descriptions == ["Same task", "Same task"]
+
+
+def _seed_yesterdays_intent(db_session, org_id, description="Finish the deck"):
+    """Real HTTP cannot exercise "yesterday" within one test run (the
+    server always resolves "today" to the real current UTC date) - the
+    prior day is seeded directly via the repository, exactly as P7.17's
+    own reflect-follow-up test seeded a prior DailyIntent, so that
+    "today's" submission can still be exercised through the real API."""
+    from datetime import UTC, timedelta
+
+    user = db_session.query(User).filter(User.username == "alice").one()
+    yesterday = DailyIntent(
+        intent_date=datetime.now(UTC).date() - timedelta(days=1), stated_intention="Ship it", day_type=DayType.WORK,
+        planned_activities=(PlannedActivity(description=description),),
+    )
+    SqlDailyIntentRepository(db_session).save(yesterday, organization_id=org_id, user_id=user.id)
+    return yesterday
+
+
+def test_continuation_without_explicit_activities_still_carries_forward(client, org_id, token, db_session):
+    _seed_yesterdays_intent(db_session, org_id)
+
+    response = client.post("/api/v1/personal-os/today/intent", json={"text": "Continuing as planned, same as yesterday."}, headers=_headers(token))
+    assert response.status_code == 200
+    assert [a["description"] for a in response.json()["intent"]["planned_activities"]] == ["Finish the deck"]
+
+
+def test_continuation_with_explicit_activities_overrides_carry_forward(client, org_id, token, db_session):
+    yesterday = _seed_yesterdays_intent(db_session, org_id)
+
+    response = client.post(
+        "/api/v1/personal-os/today/intent",
+        json={"text": "Continuing as planned, same as yesterday.", "planned_activities": [{"description": "A different task entirely"}]},
+        headers=_headers(token),
+    )
+    assert response.status_code == 200
+    assert [a["description"] for a in response.json()["intent"]["planned_activities"]] == ["A different task entirely"]
+    assert response.json()["intent"]["continuation_of_date"] == yesterday.intent_date.isoformat()

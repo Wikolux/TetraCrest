@@ -43,6 +43,7 @@ from app.schemas.personal_os import (
     MorningPromptModel,
     PersonalStateItemModel,
     PersonalStateModel,
+    PlannedActivityInput,
     PlannedActivityModel,
     PlanRecommendationModel,
     PriorityEntryModel,
@@ -298,7 +299,7 @@ def _brief_model(brief: IntelligenceBrief) -> IntelligenceBriefModel:
 # --- request -> domain conversions (for the reflection continuation echo) ----------------------
 
 
-def _planned_activity_from_model(model: PlannedActivityModel) -> PlannedActivity:
+def _planned_activity_from_model(model: PlannedActivityModel | PlannedActivityInput) -> PlannedActivity:
     return PlannedActivity(description=model.description, focus_area=model.focus_area, deadline=model.deadline, estimated_hours=model.estimated_hours)
 
 
@@ -367,7 +368,17 @@ def submit_intent(
 ) -> IntentSubmitResponse:
     today = resolve_personal_os_today()
     flow = _build_morning_flow(db)
-    result = flow.submit(organization_id=organization_id, user_id=user.id, conversation_id=None, today=today, user_text=payload.text)
+    explicit_planned_activities = (
+        tuple(_planned_activity_from_model(a) for a in payload.planned_activities) if payload.planned_activities is not None else None
+    )
+    result = flow.submit(
+        organization_id=organization_id,
+        user_id=user.id,
+        conversation_id=None,
+        today=today,
+        user_text=payload.text,
+        explicit_planned_activities=explicit_planned_activities,
+    )
     return IntentSubmitResponse(intent=_intent_model(result.intent), acknowledgment=result.acknowledgment)
 
 

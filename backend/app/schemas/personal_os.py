@@ -32,6 +32,23 @@ class PlannedActivityModel(BaseModel):
     estimated_hours: float | None = None
 
 
+class PlannedActivityInput(BaseModel):
+    """P7.19: a dedicated INPUT shape, deliberately not a reuse of
+    PlannedActivityModel (that one is this API's own OUTPUT
+    representation) - the two happen to carry the same four fields today
+    only because PlannedActivity itself has no derived/presentation-only
+    field for either direction to diverge on; kept separate so input and
+    output can evolve independently regardless. Only the fields a user
+    can actually author are exposed - no status, sequence, id, or
+    tenant field, none of which PlannedActivity's own construction ever
+    takes from a caller."""
+
+    description: str = Field(min_length=1)
+    focus_area: str = ""
+    deadline: date | None = None
+    estimated_hours: float | None = Field(default=None, gt=0)
+
+
 class IntentFieldModel(BaseModel):
     value: str
     source: str
@@ -211,7 +228,17 @@ class TodayResponse(BaseModel):
 
 
 class IntentSubmitRequest(BaseModel):
+    """`planned_activities` (P7.19, optional) is structured "what I plan
+    to do today" - distinct from `text` ("what matters to me today"),
+    never inferred from it (no model call reads `text` to guess
+    activities). Omitting the field entirely means "not supplied" and
+    preserves every pre-P7.19 request's exact behavior; an explicit `[]`
+    means "no planned activities today," a real, different signal from
+    omission - see MorningInteractionFlow.submit()'s own docstring for
+    how each is honored."""
+
     text: str = Field(min_length=1)
+    planned_activities: list[PlannedActivityInput] | None = None
 
 
 class IntentSubmitResponse(BaseModel):

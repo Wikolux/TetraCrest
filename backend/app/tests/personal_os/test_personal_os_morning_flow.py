@@ -69,6 +69,81 @@ def test_continuation_from_previous_day_carries_planned_activities_forward():
     assert response.intent.planned_activities == yesterday.planned_activities
 
 
+def test_explicit_planned_activities_are_used_on_a_first_time_non_continuing_day():
+    """P7.19: the one case submit() previously always left empty -
+    planned_activities is populated for the very first time from an
+    explicit, caller-supplied statement, never inferred from user_text."""
+    response = _flow().submit(
+        organization_id=1,
+        user_id=2,
+        conversation_id=None,
+        today=date(2026, 8, 13),
+        user_text="Today is different. I want to study and apply for jobs.",
+        explicit_planned_activities=(PlannedActivity(description="Study for the exam"), PlannedActivity(description="Apply to three jobs")),
+    )
+    assert [a.description for a in response.intent.planned_activities] == ["Study for the exam", "Apply to three jobs"]
+
+
+def test_explicit_planned_activities_win_over_carry_forward_precedence():
+    """P7.19 §8: explicit user-supplied structured data takes precedence
+    over implicit carry-forward inference, even when the heuristic
+    detects a continuing day."""
+    repo = InMemoryDailyIntentRepository()
+    yesterday = DailyIntent(
+        intent_date=date(2026, 8, 12), stated_intention="Ship it", day_type=DayType.WORK, planned_activities=(PlannedActivity(description="Finish the deck"),)
+    )
+    repo.save(yesterday, organization_id=1, user_id=2)
+
+    response = _flow(repo).submit(
+        organization_id=1,
+        user_id=2,
+        conversation_id=None,
+        today=date(2026, 8, 13),
+        user_text="Continuing as planned, same as yesterday.",
+        explicit_planned_activities=(PlannedActivity(description="A brand new activity"),),
+    )
+    assert [a.description for a in response.intent.planned_activities] == ["A brand new activity"]
+    # continuation_of_date still records temporal lineage, independent of which activities won
+    assert response.intent.continuation_of_date == date(2026, 8, 12)
+
+
+def test_explicit_empty_planned_activities_means_none_today_not_carry_forward():
+    """P7.19 §9: an explicitly empty tuple is a real, different signal
+    from omission ("I have no planned activities today") and must not
+    be treated the same as "not supplied" - it still overrides
+    carry-forward."""
+    repo = InMemoryDailyIntentRepository()
+    yesterday = DailyIntent(
+        intent_date=date(2026, 8, 12), stated_intention="Ship it", day_type=DayType.WORK, planned_activities=(PlannedActivity(description="Finish the deck"),)
+    )
+    repo.save(yesterday, organization_id=1, user_id=2)
+
+    response = _flow(repo).submit(
+        organization_id=1,
+        user_id=2,
+        conversation_id=None,
+        today=date(2026, 8, 13),
+        user_text="Continuing as planned, same as yesterday.",
+        explicit_planned_activities=(),
+    )
+    assert response.intent.planned_activities == ()
+
+
+def test_omitting_explicit_planned_activities_preserves_pre_p719_behavior():
+    """explicit_planned_activities=None (the default) must change nothing
+    about any pre-existing caller's behavior."""
+    repo = InMemoryDailyIntentRepository()
+    yesterday = DailyIntent(
+        intent_date=date(2026, 8, 12), stated_intention="Ship it", day_type=DayType.WORK, planned_activities=(PlannedActivity(description="Finish the deck"),)
+    )
+    repo.save(yesterday, organization_id=1, user_id=2)
+
+    response = _flow(repo).submit(
+        organization_id=1, user_id=2, conversation_id=None, today=date(2026, 8, 13), user_text="Continuing as planned, same as yesterday."
+    )
+    assert response.intent.planned_activities == yesterday.planned_activities
+
+
 def test_new_priorities_can_be_introduced_when_the_day_is_different():
     """Mirrors the build spec's own worked example verbatim."""
     response = _flow().submit(

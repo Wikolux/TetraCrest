@@ -125,9 +125,26 @@ class MorningInteractionFlow:
         conversation_id: int | None,
         today: date,
         user_text: str,
+        explicit_planned_activities: tuple[PlannedActivity, ...] | None = None,
     ) -> MorningResponse:
         """Reconcile the user's free-form reply against carried-over
-        state and produce today's DailyIntent."""
+        state and produce today's DailyIntent.
+
+        `explicit_planned_activities` (P7.19, optional) is the caller's
+        own structured statement of what they plan to do today - never
+        inferred from `user_text` (that would be new NLU, not a data-
+        capture seam). `None` means "not supplied," preserving every
+        pre-P7.19 caller's behavior exactly (carry-forward on a
+        continuing day, empty otherwise). An explicitly supplied tuple -
+        including an explicitly EMPTY one, meaningfully distinct from
+        `None` ("I have no planned activities today," not "say nothing
+        about activities") - always wins over carry-forward inference:
+        the user's own explicit statement of today's plan is a stronger
+        signal than a heuristic guess about whether today continues
+        yesterday's. `continuation_of_date` is still recorded whenever
+        `continues_previous` holds, regardless of which activities are
+        used - it records temporal lineage ("today follows that day"),
+        not which specific activities apply today."""
         if not user_text:
             raise ValueError("MorningInteractionFlow.submit() requires non-empty user_text")
 
@@ -140,6 +157,8 @@ class MorningInteractionFlow:
         if continues_previous and previous is not None:
             planned_activities = previous.planned_activities
             continuation_of_date = previous.intent_date
+        if explicit_planned_activities is not None:
+            planned_activities = explicit_planned_activities
 
         new_priorities = (
             (IntentField(value=user_text, source=IntentSource.USER_EXPLICIT, confidence=Confidence.HIGH),)

@@ -151,3 +151,104 @@ def test_no_client_supplied_date_reaches_a_mutating_flow_call():
             if isinstance(node.value, ast.Attribute) and isinstance(node.value.value, ast.Name) and node.value.value.id == "payload":
                 violations.append(ast.dump(node))
     assert violations == [], f"a flow call received today= from the request body: {violations}"
+
+
+# --- P7.19: Daily Intent Activity Capture protections -------------------------------------------
+
+
+def test_p719_introduces_no_new_endpoint():
+    """P7.19 only extends the existing POST /today/intent request shape -
+    it must not add a sixth Personal OS daily-lifecycle route."""
+    daily_lifecycle_paths = {path for path in _personal_os_paths() if path.startswith("/api/v1/personal-os/today") or path == "/api/v1/personal-os/brief"}
+    assert daily_lifecycle_paths == {
+        "/api/v1/personal-os/today",
+        "/api/v1/personal-os/today/intent",
+        "/api/v1/personal-os/today/interact",
+        "/api/v1/personal-os/today/reflect",
+        "/api/v1/personal-os/brief",
+    }
+
+
+def test_p719_introduces_no_pattern_detection_or_surfacing_production_caller():
+    source = _route_module_source()
+    for fragment in ("PatternDetectionFlow", ".detect(", ".surface_next(", "pattern_flow"):
+        assert fragment not in source, f"personal_os.py references {fragment!r} - P7.19 fixes evidence input only, never triggers detection"
+
+
+def test_p719_introduces_no_orchestrator():
+    """"Orchestrates"/"orchestration" is common, legitimate prose already
+    used throughout Personal OS's own pre-existing docstrings (e.g.
+    pattern_flow.py's own module docstring, unrelated to P7.19) - this
+    checks specifically for an actual new orchestrator CLASS, not the
+    English word."""
+    import pathlib
+
+    app_dir = pathlib.Path(__file__).resolve().parents[1]
+    personal_os_paths = list((app_dir / "services" / "personal_os").rglob("*.py")) + [
+        app_dir / "api" / "v1" / "routes" / "personal_os.py",
+        app_dir / "api" / "v1" / "routes" / "personal_os_decisions.py",
+    ]
+    for path in personal_os_paths:
+        tree = ast.parse(path.read_text(), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and "orchestrat" in node.name.lower():
+                raise AssertionError(f"{path} defines {node.name!r} - no orchestrator class is in scope for P7.19")
+
+
+def test_p719_introduces_no_scheduler_or_background_worker():
+    source = _route_module_source()
+    for fragment in ("celery", "Celery", "APScheduler", "BackgroundTasks", "cron", "asyncio.create_task", "redis", "Redis"):
+        assert fragment not in source, f"personal_os.py references {fragment!r} - no automation is in scope for P7.19"
+
+
+def test_p719_introduces_no_external_tool():
+    tree = ast.parse(_route_module_source())
+    imported = [node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module]
+    forbidden_fragments = ("tool_implementations", "agents.specialists.research", "ai.tools.manager", "ai.tools.execution", "ai.tools.permissions")
+    for module in imported:
+        for fragment in forbidden_fragments:
+            assert fragment not in module, f"personal_os.py imports {module!r} - external tools are out of scope for P7.19"
+
+
+def test_p719_introduces_no_new_model_call():
+    """Structured planned_activities are explicit user data - the model
+    is never asked to infer activities from free text. personal_os.py
+    itself never constructs a Runtime call directly (that seam belongs
+    entirely to the flows, unchanged by P7.19)."""
+    source = _route_module_source()
+    assert "RuntimeRequest(" not in source
+    assert "RuntimeAdapter(" not in source
+
+
+def test_p719_dayevents_remain_separate_from_dailyintent():
+    """Morning planned activities live on DailyIntent; midday changes
+    live on DayEvent/Living Day - P7.19 must not collapse these. The
+    interact() route function must never reference planned_activities."""
+    tree = ast.parse(_route_module_source())
+    interact_fn = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == "interact")
+    assert "planned_activities" not in ast.unparse(interact_fn)
+
+
+def test_p719_get_routes_remain_non_mutating():
+    """Re-confirms P7.17's own read-purity guarantee still holds after
+    the P7.19 schema/flow change - GET /today and GET /brief construct
+    no domain object with a caller-chosen status and call no `.save(`
+    other than through an existing, already-covered flow method."""
+    source = _route_module_source()
+    get_today_fn = next(node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.FunctionDef) and node.name == "get_today")
+    get_brief_fn = next(node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.FunctionDef) and node.name == "get_brief")
+    for fn in (get_today_fn, get_brief_fn):
+        body_source = ast.unparse(fn)
+        assert ".save(" not in body_source, f"{fn.name}() writes state - GET must remain read-only"
+
+
+def test_p719_does_not_touch_the_governance_route_module():
+    """P7.18's governance surface (personal_os_decisions.py) must be
+    byte-for-byte unaffected by P7.19."""
+    import inspect
+
+    import app.api.v1.routes.personal_os_decisions as decisions_route_module
+
+    source = inspect.getsource(decisions_route_module)
+    assert "explicit_planned_activities" not in source
+    assert "PlannedActivityInput" not in source
