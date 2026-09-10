@@ -21,9 +21,17 @@ def _personal_os_paths() -> list[str]:
     return [route.path for route in main.app.routes if getattr(route, "path", "").startswith("/api/v1/personal-os")]
 
 
-def test_exactly_five_personal_os_routes_exist():
-    paths = set(_personal_os_paths())
-    assert paths == {
+def test_exactly_five_daily_lifecycle_routes_exist():
+    """Scoped to the daily-lifecycle surface P7.17 itself introduced -
+    P7.18 later added a sibling governance surface (decisions/patterns/
+    experiments/adaptations) under the same /personal-os prefix, which
+    is a separate, additional route module (personal_os_decisions.py),
+    not a change to this one; see
+    test_personal_os_decisions_api_architecture.py's own
+    test_existing_daily_lifecycle_routes_are_unaffected for the
+    P7.18-side proof that these five are untouched."""
+    daily_lifecycle_paths = {path for path in _personal_os_paths() if path.startswith("/api/v1/personal-os/today") or path == "/api/v1/personal-os/brief"}
+    assert daily_lifecycle_paths == {
         "/api/v1/personal-os/today",
         "/api/v1/personal-os/today/intent",
         "/api/v1/personal-os/today/interact",
